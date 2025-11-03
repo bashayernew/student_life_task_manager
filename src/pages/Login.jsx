@@ -15,18 +15,10 @@ const Login = () => {
   const [authError, setAuthError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect based on user role after authentication and profile loading
+  // Redirect to dashboard after authentication and profile loading
   useEffect(() => {
     if (user && !loading && !profileLoading && userProfile) {
-      // Redirect based on user role
-      if (userProfile?.role === 'admin') {
-        navigate('/admin-dashboard');
-      } else if (userProfile?.role === 'staff') {
-        navigate('/staff-dashboard');
-      } else {
-        // Fallback for unknown roles
-        navigate('/admin-dashboard');
-      }
+      navigate('/dashboard');
     }
   }, [user, loading, profileLoading, userProfile, navigate]);
 

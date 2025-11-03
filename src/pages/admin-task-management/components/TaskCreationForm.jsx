@@ -5,6 +5,7 @@ import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import Select from '../../../components/ui/Select';
 import Icon from '../../../components/AppIcon';
+import { PRIORITIES } from '../../../constants/priorities';
 
 const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
   const { user } = useAuth();
@@ -12,7 +13,7 @@ const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
     title: '',
     details: '',
     due_at: '',
-    priority: 'normal',
+    priority: 'medium',
     department_id: ''
   });
   const [assignees, setAssignees] = useState([]);
@@ -123,7 +124,7 @@ const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
         title: '',
         details: '',
         due_at: '',
-        priority: 'normal',
+        priority: 'medium',
         department_id: ''
       });
       setSelectedAssignees([]);
@@ -217,16 +218,15 @@ const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
                   </label>
                   <Select
                     name="priority"
-                    value={formData?.priority || 'normal'}
-                    onChange={handleInputChange}
+                    value={formData?.priority || 'medium'}
+                    onChange={(value) => {
+                      const safePriority = (value || 'medium').toLowerCase();
+                      setFormData(prev => ({ ...prev, priority: safePriority }));
+                    }}
+                    options={PRIORITIES}
                     disabled={loading}
                     className="w-full"
-                  >
-                    <option value="low">Low</option>
-                    <option value="normal">Normal</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </Select>
+                  />
                 </div>
 
                 <div>

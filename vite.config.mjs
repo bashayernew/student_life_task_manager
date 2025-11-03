@@ -11,11 +11,16 @@ export default defineConfig({
     outDir: "build",
     chunkSizeWarningLimit: 2000,
   },
-  plugins: [tsconfigPaths(), react(), tagger()],
+  plugins: [react(), tsconfigPaths(), tagger()],
   server: {
-    port: "4028",
+    port: 5173,
     host: "0.0.0.0",
-    strictPort: true,
+    strictPort: false,  // auto-pick a free port if 5173 is busy
     allowedHosts: ['.amazonaws.com', '.builtwithrocket.new']
-  }
+  },
+  preview: {
+    port: 4173,
+    strictPort: false
+  },
+  appType: 'spa'
 });

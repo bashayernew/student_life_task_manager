@@ -6,3 +6,9 @@ package-lock.json
 .vscode/
 .idea/
 vite.config.*s.*
+.env
+.env.local
+.env.production
+.env.development
+*.log
+dist

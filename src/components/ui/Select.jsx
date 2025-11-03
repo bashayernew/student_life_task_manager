@@ -105,27 +105,36 @@ const Select = React.forwardRef(({
                     htmlFor={selectId}
                     className={cn(
                         "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mb-2 block",
-                        error ? "text-destructive" : "text-foreground"
+                        error ? "text-red-400" : "text-gray-300"
                     )}
                 >
                     {label}
-                    {required && <span className="text-destructive ml-1">*</span>}
+                    {required && <span className="text-red-400 ml-1">*</span>}
                 </label>
             )}
             <div className="relative">
-                <button
+                <div
                     ref={ref}
                     id={selectId}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={cn(
-                        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-white text-black px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-                        error && "border-destructive focus:ring-destructive",
-                        !hasValue && "text-muted-foreground"
+                        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-gray-700 text-white px-3 py-2 text-sm ring-offset-background placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer",
+                        disabled && "cursor-not-allowed opacity-50",
+                        error && "border-red-500 focus:ring-red-500",
+                        !hasValue && "text-gray-400"
                     )}
-                    onClick={handleToggle}
-                    disabled={disabled}
+                    onClick={disabled ? undefined : handleToggle}
+                    onKeyDown={(e) => {
+                        if (disabled) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleToggle();
+                        }
+                    }}
                     aria-expanded={isOpen}
                     aria-haspopup="listbox"
+                    aria-disabled={disabled}
                     {...props}
                 >
                     <span className="truncate">{getSelectedDisplay()}</span>
@@ -143,7 +152,10 @@ const Select = React.forwardRef(({
                                 variant="ghost"
                                 size="icon"
                                 className="h-4 w-4"
-                                onClick={handleClear}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleClear(e);
+                                }}
                             >
                                 <X className="h-3 w-3" />
                             </Button>
@@ -151,7 +163,7 @@ const Select = React.forwardRef(({
 
                         <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} />
                     </div>
-                </button>
+                </div>
 
                 {/* Hidden native select for form submission */}
                 <select
@@ -173,16 +185,16 @@ const Select = React.forwardRef(({
 
                 {/* Dropdown */}
                 {isOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-white text-black border border-border rounded-md shadow-md">
+                    <div className="absolute z-50 w-full mt-1 bg-gray-800 text-white border border-gray-600 rounded-md shadow-lg">
                         {searchable && (
-                            <div className="p-2 border-b">
+                            <div className="p-2 border-b border-gray-700">
                                 <div className="relative">
-                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                                     <Input
                                         placeholder="Search options..."
                                         value={searchTerm}
                                         onChange={handleSearchChange}
-                                        className="pl-8"
+                                        className="pl-8 bg-gray-700 border-gray-600 text-white"
                                     />
                                 </div>
                             </div>
@@ -190,26 +202,34 @@ const Select = React.forwardRef(({
 
                         <div className="py-1 max-h-60 overflow-auto">
                             {filteredOptions?.length === 0 ? (
-                                <div className="px-3 py-2 text-sm text-muted-foreground">
+                                <div className="px-3 py-2 text-sm text-gray-400">
                                     {searchTerm ? 'No options found' : 'No options available'}
                                 </div>
                             ) : (
                                 filteredOptions?.map((option) => (
                                     <div
                                         key={option?.value}
+                                        role="button"
+                                        tabIndex={0}
                                         className={cn(
-                                            "relative flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
-                                            isSelected(option?.value) && "bg-primary text-primary-foreground",
+                                            "relative flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-gray-700",
+                                            isSelected(option?.value) && "bg-blue-600 text-white",
                                             option?.disabled && "pointer-events-none opacity-50"
                                         )}
-                                        onClick={() => !option?.disabled && handleOptionSelect(option)}
+                                        onClick={() => !option?.disabled && handleOptionSelect(option?.value)}
+                                        onKeyDown={(e) => { 
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                if (!option?.disabled) handleOptionSelect(option?.value);
+                                            }
+                                        }}
                                     >
                                         <span className="flex-1">{option?.label}</span>
                                         {multiple && isSelected(option?.value) && (
                                             <Check className="h-4 w-4" />
                                         )}
                                         {option?.description && (
-                                            <span className="text-xs text-muted-foreground ml-2">
+                                            <span className="text-xs text-gray-400 ml-2">
                                                 {option?.description}
                                             </span>
                                         )}
