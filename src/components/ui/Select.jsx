@@ -69,12 +69,14 @@ const Select = React.forwardRef(({
     const handleOptionSelect = (option) => {
         if (multiple) {
             const newValue = value || [];
-            const updatedValue = newValue?.includes(option?.value)
-                ? newValue?.filter(v => v !== option?.value)
-                : [...newValue, option?.value];
+            const optionValue = option?.value ?? option;
+            const updatedValue = newValue?.includes(optionValue)
+                ? newValue?.filter(v => v !== optionValue)
+                : [...newValue, optionValue];
             onChange?.(updatedValue);
         } else {
-            onChange?.(option?.value);
+            const optionValue = option?.value ?? option;
+            onChange?.(optionValue);
             setIsOpen(false);
             onOpenChange?.(false);
         }
@@ -216,11 +218,11 @@ const Select = React.forwardRef(({
                                             isSelected(option?.value) && "bg-blue-600 text-white",
                                             option?.disabled && "pointer-events-none opacity-50"
                                         )}
-                                        onClick={() => !option?.disabled && handleOptionSelect(option?.value)}
+                                        onClick={() => !option?.disabled && handleOptionSelect(option)}
                                         onKeyDown={(e) => { 
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();
-                                                if (!option?.disabled) handleOptionSelect(option?.value);
+                                                if (!option?.disabled) handleOptionSelect(option);
                                             }
                                         }}
                                     >
