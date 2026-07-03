@@ -62,7 +62,7 @@ In Supabase SQL Editor, run this (one time only):
 select auth.admin.create_user(
   jsonb_build_object(
     'email','eyad123@eyad.com',
-    'password','Ey@d9090',
+    'password','YOUR_ADMIN_PASSWORD',
     'email_confirm', true,
     'user_metadata', jsonb_build_object('full_name','Admin','role','admin')
   )
@@ -82,7 +82,7 @@ If you haven't run your migrations yet, execute these in order in Supabase SQL E
 
 Go to your local site → click "Login" →
 - **Email:** eyad123@eyad.com
-- **Password:** Ey@d9090
+- **Password:** set via Supabase dashboard or your chosen admin password
 
 ## 5️⃣ (Optional) If You Have an Edge Function
 

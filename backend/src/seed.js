@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db from './db.js';
@@ -8,6 +9,19 @@ if (userCount > 0) {
   console.log('Database already seeded, skipping.');
   process.exit(0);
 }
+
+const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+const managerPassword = process.env.SEED_MANAGER_PASSWORD || process.env.SEED_STAFF_PASSWORD;
+const staffPassword = process.env.SEED_STAFF_PASSWORD;
+
+if (!adminPassword || !managerPassword || !staffPassword) {
+  console.error(
+    'Missing seed passwords. Set SEED_ADMIN_PASSWORD, SEED_MANAGER_PASSWORD (or reuse SEED_STAFF_PASSWORD), and SEED_STAFF_PASSWORD in backend/.env before running seed.'
+  );
+  process.exit(1);
+}
+
+const adminEmail = process.env.SEED_ADMIN_EMAIL || 'superadmin@admin.com';
 
 const departments = [
   'Residence Life',
@@ -38,10 +52,10 @@ const insertUser = db.prepare(`
 `);
 
 const users = [
-  { email: 'superadmin@admin.com', password: 'Adm!n@123', full_name: 'Super Admin', role: 'admin', department_id: null },
-  { email: 'manager@taskmanager.com', password: 'password123', full_name: 'Activities Manager', role: 'manager', department_id: deptIds['Student Activities'] },
-  { email: 'john@taskmanager.com', password: 'password123', full_name: 'John Smith', role: 'staff', department_id: deptIds['Student Activities'] },
-  { email: 'sarah@taskmanager.com', password: 'password123', full_name: 'Sarah Johnson', role: 'staff', department_id: deptIds['Residence Life'] },
+  { email: adminEmail, password: adminPassword, full_name: 'Super Admin', role: 'admin', department_id: null },
+  { email: 'manager@taskmanager.com', password: managerPassword, full_name: 'Activities Manager', role: 'manager', department_id: deptIds['Student Activities'] },
+  { email: 'john@taskmanager.com', password: staffPassword, full_name: 'John Smith', role: 'staff', department_id: deptIds['Student Activities'] },
+  { email: 'sarah@taskmanager.com', password: staffPassword, full_name: 'Sarah Johnson', role: 'staff', department_id: deptIds['Residence Life'] },
 ];
 
 for (const u of users) {
@@ -49,6 +63,6 @@ for (const u of users) {
 }
 
 console.log('Database seeded successfully.');
-console.log('Admin: superadmin@admin.com / Adm!n@123');
-console.log('Manager: manager@taskmanager.com / password123 (Student Activities)');
-console.log('Staff: john@taskmanager.com / password123');
+console.log(`Admin email: ${adminEmail}`);
+console.log('Manager email: manager@taskmanager.com');
+console.log('Staff email: john@taskmanager.com');

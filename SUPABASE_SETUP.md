@@ -87,8 +87,8 @@ CREATE POLICY "Allow authenticated read" ON public.task_assignees FOR SELECT TO 
 
 ### Step 4: Verify Setup
 After running migrations, you should be able to login with:
-- **Admin**: `eyad123@eyad.com` / `Ey@d9090`
-- **Staff**: `john@taskmanager.com` / `password123`
+- **Admin**: configure via seed script / admin account (see `backend/.env.example`)
+- **Staff**: demo seed emails only — set passwords in local `backend/.env`
 
 ## Quick Test Query
 Run this in SQL Editor to verify users were created:

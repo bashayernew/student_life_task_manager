@@ -16,7 +16,7 @@ BEGIN
         UPDATE auth.users 
         SET 
             email = 'eyad123@eyad.com',
-            encrypted_password = crypt('Ey@d9090', gen_salt('bf', 10)),
+            encrypted_password = crypt('YOUR_ADMIN_PASSWORD', gen_salt('bf', 10)),
             raw_user_meta_data = jsonb_build_object(
                 'full_name', 'Admin User',
                 'role', 'admin'
@@ -47,7 +47,7 @@ BEGIN
             phone_change_token, phone_change_sent_at
         ) VALUES (
             admin_user_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-            'eyad123@eyad.com', crypt('Ey@d9090', gen_salt('bf', 10)), now(), now(), now(),
+            'eyad123@eyad.com', crypt('YOUR_ADMIN_PASSWORD', gen_salt('bf', 10)), now(), now(), now(),
             '{"full_name": "Admin User", "role": "admin"}'::jsonb, 
             '{"provider": "email", "providers": ["email"]}'::jsonb,
             false, false, '', null, '', null, '', '', null, '', 0, '', null, null, '', '', null

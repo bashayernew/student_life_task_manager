@@ -102,36 +102,38 @@ for (const row of legacyManagers) {
   insertUserDept.run(row.id, row.department_id);
 }
 
-const SUPER_ADMIN_EMAIL = 'superadmin@admin.com';
-const SUPER_ADMIN_PASSWORD = 'Adm!n@123';
-const superAdminHash = bcrypt.hashSync(SUPER_ADMIN_PASSWORD, 10);
+const SUPER_ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'superadmin@admin.com';
 
-const existingSuperAdmin = db.prepare(`
-  SELECT id FROM users WHERE lower(email) = lower(?)
-`).get(SUPER_ADMIN_EMAIL);
+if (process.env.SEED_ADMIN_PASSWORD) {
+  const superAdminHash = bcrypt.hashSync(process.env.SEED_ADMIN_PASSWORD, 10);
 
-if (!existingSuperAdmin) {
-  const legacyAdmin = db.prepare(`
+  const existingSuperAdmin = db.prepare(`
     SELECT id FROM users WHERE lower(email) = lower(?)
-  `).get('eyad123@eyad.com');
+  `).get(SUPER_ADMIN_EMAIL);
 
-  if (legacyAdmin) {
-    db.prepare(`
-      UPDATE users
-      SET email = ?, password_hash = ?, role = 'admin', full_name = 'Super Admin', updated_at = datetime('now')
-      WHERE id = ?
-    `).run(SUPER_ADMIN_EMAIL, superAdminHash, legacyAdmin.id);
-  } else {
-    const firstAdmin = db.prepare(`
-      SELECT id, email FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1
-    `).get();
+  if (!existingSuperAdmin) {
+    const legacyAdmin = db.prepare(`
+      SELECT id FROM users WHERE lower(email) = lower(?)
+    `).get('eyad123@eyad.com');
 
-    if (firstAdmin && firstAdmin.email?.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()) {
+    if (legacyAdmin) {
       db.prepare(`
         UPDATE users
-        SET email = ?, password_hash = ?, full_name = 'Super Admin', updated_at = datetime('now')
+        SET email = ?, password_hash = ?, role = 'admin', full_name = 'Super Admin', updated_at = datetime('now')
         WHERE id = ?
-      `).run(SUPER_ADMIN_EMAIL, superAdminHash, firstAdmin.id);
+      `).run(SUPER_ADMIN_EMAIL, superAdminHash, legacyAdmin.id);
+    } else {
+      const firstAdmin = db.prepare(`
+        SELECT id, email FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1
+      `).get();
+
+      if (firstAdmin && firstAdmin.email?.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()) {
+        db.prepare(`
+          UPDATE users
+          SET email = ?, password_hash = ?, full_name = 'Super Admin', updated_at = datetime('now')
+          WHERE id = ?
+        `).run(SUPER_ADMIN_EMAIL, superAdminHash, firstAdmin.id);
+      }
     }
   }
 }
