@@ -1,228 +1,92 @@
-import { supabase } from '../lib/supabase';
-
-/**
- * Enhanced Authentication Service with Better Error Handling
- * Integrates with existing Supabase auth and profiles schema
- */
+import { apiRequest } from '../lib/api';
 
 export const authService = {
-  // Sign in with email and password
   async signIn(email, password) {
-    try {
-      const { data, error } = await supabase?.auth?.signInWithPassword({
-        email: email?.trim(),
-        password
-      });
-      
-      if (error) {
-        // Supabase handled the request but returned an error
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      // Network/Infrastructure errors
-      if (error?.message?.includes('Failed to fetch') || 
-          error?.message?.includes('AuthRetryableFetchError') ||
-          error?.name === 'TypeError' && error?.message?.includes('fetch')) {
-        return { 
-          data: null, 
-          error: { 
-            message: 'Cannot connect to authentication service. Your Supabase project may be paused or inactive. Please check your Supabase dashboard and resume your project if needed.' 
-          } 
-        };
-      }
-      
-      return { 
-        data: null, 
-        error: { message: 'An unexpected error occurred during sign in' } 
-      };
-    }
+    const { data, error } = await apiRequest('post', '/auth/login', { email, password });
+    return { data, error };
   },
 
-  // Sign out user
   async signOut() {
-    try {
-      const { error } = await supabase?.auth?.signOut();
-      
-      if (error) {
-        return { error };
-      }
-      
-      return { error: null };
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        return { 
-          error: { 
-            message: 'Cannot connect to authentication service. Please check your connection.' 
-          } 
-        };
-      }
-      
-      return { error: { message: 'Failed to sign out' } };
-    }
+    return { error: null };
   },
 
-  // Get current user session
   async getSession() {
-    try {
-      const { data, error } = await supabase?.auth?.getSession();
-      
-      if (error) {
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      return { 
-        data: null, 
-        error: { message: 'Failed to get session' } 
-      };
-    }
+    const { data, error } = await apiRequest('get', '/auth/me');
+    return { data, error };
   },
 
-  // Get current user
   async getUser() {
-    try {
-      const { data, error } = await supabase?.auth?.getUser();
-      
-      if (error) {
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      return { 
-        data: null, 
-        error: { message: 'Failed to get user' } 
-      };
-    }
+    const { data, error } = await apiRequest('get', '/auth/me');
+    return { data: data?.user ? { user: data.user } : null, error };
   },
 
-  // Get user profile from profiles table
   async getUserProfile(userId) {
-    if (!userId) {
-      return { data: null, error: { message: 'User ID required' } };
+    const { data, error } = await apiRequest('get', '/auth/me');
+    if (error) return { data: null, error };
+    if (data?.profile?.id !== userId) {
+      return { data: data?.profile || null, error: null };
     }
-
-    try {
-      const { data, error } = await supabase
-        ?.from('profiles')
-        ?.select('*')
-        ?.eq('id', userId)
-        ?.single();
-      
-      if (error) {
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        return { 
-          data: null, 
-          error: { 
-            message: 'Cannot connect to database. Please check your connection.' 
-          } 
-        };
-      }
-      
-      return { 
-        data: null, 
-        error: { message: 'Failed to load user profile' } 
-      };
-    }
+    return { data: data?.profile || null, error: null };
   },
 
-  // Update user profile
   async updateProfile(userId, updates) {
-    if (!userId) {
-      return { data: null, error: { message: 'User ID required' } };
-    }
-
-    try {
-      const { data, error } = await supabase
-        ?.from('profiles')
-        ?.update(updates)
-        ?.eq('id', userId)
-        ?.select()
-        ?.single();
-      
-      if (error) {
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      return { 
-        data: null, 
-        error: { message: 'Failed to update profile' } 
-      };
-    }
+    const { data, error } = await apiRequest('put', '/auth/profile', updates);
+    return { data: data?.profile || null, error };
   },
 
-  // Create staff member (admin function)
-  async createStaffMember(email, fullName, departmentId = null) {
-    try {
-      const { data, error } = await supabase?.rpc('create_staff_member', {
-        user_email: email?.trim(),
-        user_full_name: fullName?.trim(),
-        user_department_id: departmentId
-      });
-      
-      if (error) {
-        return { data: null, error };
-      }
-      
-      return { data, error: null };
-    } catch (error) {
-      return { 
-        data: null, 
-        error: { message: 'Failed to create staff member' } 
-      };
+  async changePassword({ currentPassword, newPassword }) {
+    if (!currentPassword || !newPassword) {
+      return { data: null, error: { message: 'Current password and new password are required' } };
     }
+    const { data, error } = await apiRequest('patch', '/auth/password', {
+      currentPassword,
+      newPassword,
+    });
+    return { data, error };
   },
 
-  // Check if current user is admin
+  async getStaffMembers() {
+    const { data, error } = await apiRequest('get', '/staff');
+    return { data: data || [], error };
+  },
+
+  async createStaffMember(email, password, fullName, role = 'staff') {
+    const { data, error } = await apiRequest('post', '/staff', {
+      email,
+      password,
+      full_name: fullName,
+      fullName,
+      role,
+    });
+    return { data, error };
+  },
+
+  async updateStaffRole(userId, newRole) {
+    const { data, error } = await apiRequest('patch', `/staff/${userId}/role`, { role: newRole });
+    return { data, error };
+  },
+
+  async deleteStaffMember(userId) {
+    const { data, error } = await apiRequest('delete', `/staff/${userId}`);
+    return { data, error };
+  },
+
   async isAdmin() {
-    try {
-      const { data, error } = await supabase?.rpc('is_admin');
-      
-      if (error) {
-        return { data: false, error };
-      }
-      
-      return { data: data || false, error: null };
-    } catch (error) {
-      return { 
-        data: false, 
-        error: { message: 'Failed to check admin status' } 
-      };
-    }
+    const { data, error } = await apiRequest('get', '/auth/me');
+    return { data: data?.profile?.role === 'admin', error };
   },
 
-  // Check if current user is manager
   async isManager() {
-    try {
-      const { data, error } = await supabase?.rpc('is_manager');
-      
-      if (error) {
-        return { data: false, error };
-      }
-      
-      return { data: data || false, error: null };
-    } catch (error) {
-      return { 
-        data: false, 
-        error: { message: 'Failed to check manager status' } 
-      };
-    }
+    const { data, error } = await apiRequest('get', '/auth/me');
+    return {
+      data: data?.profile?.role === 'admin' || data?.profile?.role === 'manager',
+      error,
+    };
   },
 
-  // Listen to auth state changes
-  onAuthStateChange(callback) {
-    return supabase?.auth?.onAuthStateChange(callback);
-  }
+  onAuthStateChange() {
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  },
 };
 
 export default authService;

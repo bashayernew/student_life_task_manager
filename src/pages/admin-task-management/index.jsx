@@ -15,7 +15,7 @@ const AdminTaskManagement = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tasks');
 
-  // Load tasks from Supabase
+  // Load tasks from API
   useEffect(() => {
     loadTasks();
   }, []);

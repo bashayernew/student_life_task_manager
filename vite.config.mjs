@@ -15,8 +15,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: "0.0.0.0",
-    strictPort: false,  // auto-pick a free port if 5173 is busy
-    allowedHosts: ['.amazonaws.com', '.builtwithrocket.new']
+    strictPort: false,
+    allowedHosts: ['.amazonaws.com', '.builtwithrocket.new'],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 4173,

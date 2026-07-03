@@ -13,8 +13,9 @@ export default {
         background: 'var(--color-background)', // gray-50
         foreground: 'var(--color-foreground)', // gray-800
         primary: {
-          DEFAULT: 'var(--color-primary)', // blue-900
-          foreground: 'var(--color-primary-foreground)', // white
+          DEFAULT: 'var(--color-primary)',
+          hover: 'var(--color-primary-hover)',
+          foreground: 'var(--color-primary-foreground)',
         },
         secondary: {
           DEFAULT: 'var(--color-secondary)', // blue-800

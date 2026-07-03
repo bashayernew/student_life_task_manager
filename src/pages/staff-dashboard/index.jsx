@@ -88,8 +88,8 @@ const StaffDashboard = () => {
 
   const getPriorityColor = (priority) => {
     const colors = {
-      low: 'text-blue-600 bg-blue-100',
-      normal: 'text-gray-600 bg-gray-100', 
+      low: 'text-secondary bg-accent/15',
+      normal: 'text-muted-foreground bg-muted', 
       high: 'text-orange-600 bg-orange-100',
       urgent: 'text-red-600 bg-red-100'
     };
@@ -180,8 +180,8 @@ const StaffDashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-card rounded-lg p-4 shadow-sm">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Icon name="Clipboard" size={20} className="text-blue-600" />
+              <div className="w-10 h-10 bg-accent/15 rounded-lg flex items-center justify-center">
+                <Icon name="Clipboard" size={20} className="text-secondary" />
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">{stats?.total}</p>
@@ -204,8 +204,8 @@ const StaffDashboard = () => {
 
           <div className="bg-card rounded-lg p-4 shadow-sm">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Icon name="Play" size={20} className="text-blue-600" />
+              <div className="w-10 h-10 bg-accent/15 rounded-lg flex items-center justify-center">
+                <Icon name="Play" size={20} className="text-secondary" />
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">{stats?.in_progress}</p>

@@ -10,7 +10,8 @@ import Select from '../components/ui/Select';
 import Icon from '../components/AppIcon';
 import { PRIORITIES } from '../constants/priorities';
 import { STATUS } from '../constants/status';
-import { supabase } from '../lib/supabase';
+import KTechBrand from '../components/KTechBrand';
+import { getStatusBadgeClass, getTaskDisplayStatusForUser } from '../utils/statusUtils';
 
 const Dashboard = () => {
   const { userProfile, user, signOut, loading: authLoading, profileLoading } = useAuth();
@@ -37,42 +38,62 @@ const Dashboard = () => {
     department_id: '',
   });
   const [selectedAssignees, setSelectedAssignees] = useState([]);
+  const [assigneePersonalNotes, setAssigneePersonalNotes] = useState({});
+  const [completionComments, setCompletionComments] = useState({});
   const [creatingTask, setCreatingTask] = useState(false);
   const [taskError, setTaskError] = useState('');
   const [taskSuccess, setTaskSuccess] = useState('');
+
+  const isAdmin = userProfile?.role === 'admin';
+  const isManager = userProfile?.role === 'manager';
+  const managerDepartmentIds = isManager
+    ? (userProfile?.department_ids?.length
+        ? userProfile.department_ids
+        : userProfile?.department_id
+          ? [userProfile.department_id]
+          : [])
+    : [];
+  const hasManagerDepartments = managerDepartmentIds.length > 0;
+  const canCreateTasks = isAdmin || (isManager && hasManagerDepartments);
+  const canViewTeamTasks = isAdmin || (isManager && hasManagerDepartments);
 
   useEffect(() => {
     // Wait for auth and profile to load before fetching data
     if (!authLoading && !profileLoading && userProfile?.id) {
       loadStats();
-      if (userProfile?.role === 'admin') {
+      if (canCreateTasks) {
         loadDepartments();
-        loadStaffMembers(); // This will trigger loadTeamMemberTasks after staff are loaded
+        loadStaffMembers();
       }
     }
-  }, [authLoading, profileLoading, userProfile?.id, userProfile?.role]);
+  }, [authLoading, profileLoading, userProfile?.id, userProfile?.role, userProfile?.department_id, userProfile?.department_ids]);
 
   // Reload staff members when showing create task form
   useEffect(() => {
-    if (showCreateTask && userProfile?.role === 'admin') {
+    if (showCreateTask && canCreateTasks) {
       loadStaffMembers();
+      if (isManager && hasManagerDepartments) {
+        setTaskFormData((prev) => ({
+          ...prev,
+          department_id: managerDepartmentIds.length === 1 ? managerDepartmentIds[0] : prev.department_id,
+        }));
+      }
     }
-  }, [showCreateTask]);
+  }, [showCreateTask, canCreateTasks, isManager, managerDepartmentIds]);
 
-  // Auto-refresh stats every 10 seconds for admins to see live updates
+  // Auto-refresh stats every 10 seconds for admins/managers to see live updates
   useEffect(() => {
-    if (userProfile?.role === 'admin' && userProfile?.id && !authLoading && !profileLoading) {
+    if (canViewTeamTasks && userProfile?.id && !authLoading && !profileLoading) {
       const interval = setInterval(() => {
-        // Silent auto-refresh (no console log to reduce noise)
         loadStats();
         if (staffMembers.length > 0) {
           loadTeamMemberTasks(staffMembers);
         }
-      }, 10000); // Refresh every 10 seconds
+      }, 10000);
 
       return () => clearInterval(interval);
     }
-  }, [userProfile?.role, userProfile?.id, authLoading, profileLoading, staffMembers.length]);
+  }, [canViewTeamTasks, userProfile?.id, authLoading, profileLoading, staffMembers.length]);
 
   const loadDepartments = async () => {
     const { data } = await taskService.getDepartments();
@@ -80,20 +101,37 @@ const Dashboard = () => {
   };
 
   const loadStaffMembers = async () => {
-    const { data } = await staffService.getStaff();
-    if (data) {
-      // Filter to show only staff members (not admins)
-      const staff = data.filter(member => member.role === 'staff');
-      setStaffMembers(staff);
-      // After loading staff, load their tasks
-      if (userProfile?.role === 'admin') {
+    const role = userProfile?.role;
+
+    if (role === 'admin') {
+      const { data } = await staffService.getStaff();
+      if (data) {
+        const staff = data.filter((member) => member.role === 'staff');
+        setStaffMembers(staff);
         loadTeamMemberTasks(staff);
       }
+      return;
+    }
+
+    if (role === 'manager' && hasManagerDepartments) {
+      const { data, error } = await taskService.getStaffMembers();
+      if (error) {
+        console.error('Failed to load assignable staff:', error);
+        setStaffMembers([]);
+        return;
+      }
+
+      setStaffMembers(data || []);
+      loadTeamMemberTasks(data || []);
+
+      setSelectedAssignees((prev) =>
+        prev.filter((assigneeId) => (data || []).some((member) => member.id === assigneeId))
+      );
     }
   };
 
   const loadTeamMemberTasks = async (staffList = staffMembers) => {
-    if (userProfile?.role !== 'admin') return;
+    if (!canViewTeamTasks) return;
     
     setLoadingTeamTasks(true);
     try {
@@ -269,10 +307,16 @@ const Dashboard = () => {
     
     try {
       await setMyTaskStatus({ 
-        supabase, 
         userId: user.id, 
         taskId: taskId, 
-        status: STATUS.COMPLETED 
+        status: STATUS.COMPLETED,
+        comment: completionComments[taskId] || '',
+      });
+      
+      setCompletionComments((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
       });
       
       // Reload stats and tasks
@@ -328,6 +372,11 @@ const Dashboard = () => {
       return;
     }
 
+    if (isManager && managerDepartmentIds.length > 1 && !taskFormData.department_id) {
+      setTaskError('Please select which department this task belongs to');
+      return;
+    }
+
     setCreatingTask(true);
 
     try {
@@ -335,11 +384,19 @@ const Dashboard = () => {
       const taskData = {
         title: taskFormData.title,
         details: taskFormData.description || '',
-        due_at: taskFormData.due_at, // service will convert to ISO
+        due_at: taskFormData.due_at,
         priority: taskFormData.priority,
-        department_id: taskFormData.department_id || null,
+        department_id: isManager
+          ? (managerDepartmentIds.length === 1
+              ? managerDepartmentIds[0]
+              : taskFormData.department_id || null)
+          : taskFormData.department_id || null,
         created_by: user?.id,
-        assigneeIds: selectedAssignees // pass assignees to createTask
+        assigneeIds: selectedAssignees,
+        assigneeDetails: selectedAssignees.map((assigneeId) => ({
+          userId: assigneeId,
+          personalDescription: assigneePersonalNotes[assigneeId] || '',
+        })),
       };
 
       const { data: newTask, error: taskError } = await taskService.createTask(taskData);
@@ -359,13 +416,14 @@ const Dashboard = () => {
               department_id: '',
             });
       setSelectedAssignees([]);
+      setAssigneePersonalNotes({});
       setTaskSuccess('Task created and assigned successfully!');
       setShowCreateTask(false);
       
       // Reload stats after a moment
       setTimeout(() => {
         loadStats();
-        if (userProfile?.role === 'admin') {
+        if (canViewTeamTasks) {
           loadTeamMemberTasks(staffMembers);
         }
       }, 500);
@@ -378,33 +436,49 @@ const Dashboard = () => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-white">
+      <div className="min-h-screen bg-background text-foreground">
         {/* Header */}
-        <header className="bg-gray-800 border-b border-gray-700">
+        <header className="ktech-page-header">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
-              <div>
-                <h1 className="text-xl font-bold">Task Manager</h1>
-                <p className="text-sm text-gray-400">Welcome, {userProfile?.full_name || userProfile?.email}</p>
-              </div>
+              <KTechBrand
+                title="Task Manager"
+                subtitle={`Welcome, ${userProfile?.full_name || userProfile?.email}`}
+                onDark
+                titleClassName="text-primary-foreground"
+              />
               <div className="flex items-center gap-4">
                 <Button
                   onClick={() => navigate('/tasks')}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="ktech-header-btn"
                 >
-                  View Tasks
+                  Tasks
                 </Button>
                 {userProfile?.role === 'admin' && (
-                  <Button
-                    onClick={() => navigate('/staff')}
-                    className="bg-purple-600 hover:bg-purple-700"
-                  >
-                    Manage Staff
-                  </Button>
+                  <>
+                    <Button
+                      onClick={() => navigate('/staff')}
+                      className="ktech-header-btn"
+                    >
+                      Manage Staff
+                    </Button>
+                    <Button
+                      onClick={() => navigate('/departments')}
+                      className="ktech-header-btn"
+                    >
+                      Departments
+                    </Button>
+                  </>
                 )}
                 <Button
+                  onClick={() => navigate('/account')}
+                  className="ktech-header-btn"
+                >
+                  Account
+                </Button>
+                <Button
                   onClick={handleLogout}
-                  className="bg-red-600 hover:bg-red-700"
+                  className="ktech-header-btn"
                 >
                   <Icon name="LogOut" size={16} className="mr-2" />
                   Logout
@@ -416,21 +490,31 @@ const Dashboard = () => {
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
+          {isManager && !hasManagerDepartments && (
+            <div className="mb-6 bg-warning/10 border border-warning/30 rounded-lg p-4">
+              <p className="text-sm text-warning">
+                Your manager account has no department assigned yet. Ask an admin to assign you at least one department before you can assign tasks to staff.
+              </p>
+            </div>
+          )}
+
           <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h2 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2">
-                {userProfile?.role === 'admin' ? 'All Tasks by Status' : 'My Tasks by Status'}
+                {canViewTeamTasks ? 'All Tasks by Status' : 'My Tasks by Status'}
               </h2>
-              <p className="text-sm sm:text-base text-gray-400">
-                {userProfile?.role === 'admin' 
-                  ? 'Overview of all tasks (including team member tasks)' 
-                  : 'Overview of your assigned tasks'}
+              <p className="text-sm sm:text-base text-muted-foreground">
+                {isAdmin
+                  ? 'Overview of all tasks (including team member tasks)'
+                  : isManager
+                    ? 'Overview of tasks in your department'
+                    : 'Overview of your assigned tasks'}
               </p>
             </div>
-            {userProfile?.role === 'admin' && (
+            {canCreateTasks && (
               <Button
                 onClick={() => setShowCreateTask(true)}
-                className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                className="w-full sm:w-auto"
               >
                 <Icon name="Plus" size={16} className="mr-2" />
                 Create Task
@@ -439,8 +523,8 @@ const Dashboard = () => {
           </div>
 
           {/* Create Task Modal/Form */}
-          {showCreateTask && userProfile?.role === 'admin' && (
-            <div className="mb-6 sm:mb-8 bg-gray-800 rounded-lg border border-gray-700 p-4 sm:p-6">
+          {showCreateTask && canCreateTasks && (
+            <div className="mb-6 sm:mb-8 ktech-card p-4 sm:p-6">
               {/* Refresh button to reload staff members */}
               <div className="mb-4 flex justify-end">
                 <Button
@@ -450,7 +534,7 @@ const Dashboard = () => {
                     setTaskSuccess('Staff list refreshed');
                     setTimeout(() => setTaskSuccess(''), 2000);
                   }}
-                  className="bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm w-full sm:w-auto"
+                  className="bg-muted hover:bg-muted/80 text-xs sm:text-sm w-full sm:w-auto"
                 >
                   <Icon name="RefreshCw" size={14} className="mr-2" />
                   <span className="hidden sm:inline">Refresh Staff List</span>
@@ -465,7 +549,7 @@ const Dashboard = () => {
                     setTaskError('');
                     setTaskSuccess('');
                   }}
-                  className="text-gray-400 hover:text-white p-1 -mr-1"
+                  className="text-muted-foreground hover:text-foreground p-1 -mr-1"
                   aria-label="Close"
                 >
                   <Icon name="X" size={20} />
@@ -474,7 +558,7 @@ const Dashboard = () => {
               <form onSubmit={handleCreateTask} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-muted-foreground mb-2">
                       Task Title *
                     </label>
                     <Input
@@ -483,12 +567,12 @@ const Dashboard = () => {
                       value={taskFormData.title}
                       onChange={handleTaskInputChange}
                       required
-                      className="w-full bg-gray-700 border-gray-600 text-white"
+                      className="w-full bg-background border-border text-foreground"
                       placeholder="Enter task title"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-muted-foreground mb-2">
                       Due Date *
                     </label>
                     <Input
@@ -497,21 +581,21 @@ const Dashboard = () => {
                       value={taskFormData.due_at}
                       onChange={handleTaskInputChange}
                       required
-                      className="w-full bg-gray-700 border-gray-600 text-white"
+                      className="w-full bg-background border-border text-foreground"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Description
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
+                    General Description
                   </label>
                   <textarea
                     name="description"
                     value={taskFormData.description}
                     onChange={handleTaskInputChange}
                     rows={3}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter task description"
+                    className="w-full bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="Shared instructions for everyone assigned to this task"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -532,27 +616,68 @@ const Dashboard = () => {
                     />
                   </div>
                   <div>
-                    <Select
-                      label="Department"
-                      name="department_id"
-                      value={taskFormData.department_id}
-                      onChange={(value) => {
-                        setTaskFormData(prev => ({ ...prev, department_id: value || '' }));
-                        setTaskError('');
-                        setTaskSuccess('');
-                      }}
-                      options={[
-                        { value: '', label: 'No Department' },
-                        ...departments.map((dept) => ({
-                          value: dept.id,
-                          label: dept.name
-                        }))
-                      ]}
-                      placeholder="Type to search department..."
-                      searchable={true}
-                      clearable={true}
-                      className="w-full"
-                    />
+                    {isManager ? (
+                      managerDepartmentIds.length === 1 ? (
+                        <div>
+                          <label className="block text-sm font-medium text-muted-foreground mb-2">
+                            Department
+                          </label>
+                          <div className="h-10 flex items-center px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                            {userProfile?.departments?.find((dept) => dept.id === managerDepartmentIds[0])?.name ||
+                              departments.find((dept) => dept.id === managerDepartmentIds[0])?.name ||
+                              'Your department'}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Tasks you create are limited to your assigned department.
+                          </p>
+                        </div>
+                      ) : (
+                        <Select
+                          label="Department *"
+                          name="department_id"
+                          value={taskFormData.department_id}
+                          onChange={(value) => {
+                            setTaskFormData((prev) => ({ ...prev, department_id: value || '' }));
+                            setTaskError('');
+                            setTaskSuccess('');
+                          }}
+                          options={managerDepartmentIds.map((deptId) => {
+                            const dept =
+                              userProfile?.departments?.find((item) => item.id === deptId) ||
+                              departments.find((item) => item.id === deptId);
+                            return {
+                              value: deptId,
+                              label: dept?.name || 'Department',
+                            };
+                          })}
+                          placeholder="Select department for this task"
+                          searchable
+                          className="w-full"
+                        />
+                      )
+                    ) : (
+                      <Select
+                        label="Department"
+                        name="department_id"
+                        value={taskFormData.department_id}
+                        onChange={(value) => {
+                          setTaskFormData((prev) => ({ ...prev, department_id: value || '' }));
+                          setTaskError('');
+                          setTaskSuccess('');
+                        }}
+                        options={[
+                          { value: '', label: 'No Department' },
+                          ...departments.map((dept) => ({
+                            value: dept.id,
+                            label: dept.name,
+                          })),
+                        ]}
+                        placeholder="Type to search department..."
+                        searchable={true}
+                        clearable={true}
+                        className="w-full"
+                      />
+                    )}
                   </div>
                 </div>
                 <div>
@@ -561,14 +686,25 @@ const Dashboard = () => {
                     name="assignees"
                     value={selectedAssignees}
                     onChange={(value) => {
-                      setSelectedAssignees(Array.isArray(value) ? value : []);
+                      const nextAssignees = Array.isArray(value) ? value : [];
+                      setSelectedAssignees(nextAssignees);
+                      setAssigneePersonalNotes((prev) => {
+                        const next = {};
+                        for (const assigneeId of nextAssignees) {
+                          next[assigneeId] = prev[assigneeId] || '';
+                        }
+                        return next;
+                      });
                       setTaskError('');
                       setTaskSuccess('');
                     }}
                     options={staffMembers.map((member) => ({
                       value: member.id,
                       label: member.full_name || member.email,
-                      description: member.department?.name || member.email
+                      description:
+                        member.departments?.map((dept) => dept.name).join(', ') ||
+                        member.department?.name ||
+                        member.email,
                     }))}
                     placeholder="Type to search and select team members..."
                     multiple={true}
@@ -584,7 +720,7 @@ const Dashboard = () => {
                         return (
                           <span
                             key={assigneeId}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-accent/15 text-secondary border border-accent/30 rounded text-sm"
                           >
                             {member.full_name || member.email}
                             <button
@@ -592,7 +728,7 @@ const Dashboard = () => {
                               onClick={() => {
                                 setSelectedAssignees(prev => prev.filter(id => id !== assigneeId));
                               }}
-                              className="hover:text-blue-300"
+                              className="hover:text-primary"
                             >
                               <Icon name="X" size={12} />
                             </button>
@@ -601,20 +737,55 @@ const Dashboard = () => {
                       })}
                     </div>
                   )}
+                  {selectedAssignees.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      <h4 className="text-sm font-semibold text-foreground">
+                        Personal instructions (optional)
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        Add extra details for specific team members. They will only see their own note.
+                      </p>
+                      {selectedAssignees.map((assigneeId) => {
+                        const member = staffMembers.find((m) => m.id === assigneeId);
+                        if (!member) return null;
+                        return (
+                          <div key={assigneeId}>
+                            <label className="block text-sm font-medium text-muted-foreground mb-2">
+                              {member.full_name || member.email}
+                            </label>
+                            <textarea
+                              value={assigneePersonalNotes[assigneeId] || ''}
+                              onChange={(e) => {
+                                setAssigneePersonalNotes((prev) => ({
+                                  ...prev,
+                                  [assigneeId]: e.target.value,
+                                }));
+                              }}
+                              rows={2}
+                              className="w-full bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                              placeholder={`Personal description for ${member.full_name || member.email}`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   {staffMembers.length === 0 && (
-                    <p className="text-gray-400 text-sm mt-2">
-                      No staff members available. Create staff members first.
+                    <p className="text-muted-foreground text-sm mt-2">
+                      {isManager
+                        ? 'No staff members in your department yet. Ask an admin to add staff to your department.'
+                        : 'No staff members available. Create staff members first.'}
                     </p>
                   )}
                 </div>
                 {taskError && (
-                  <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
-                    <p className="text-sm text-red-400">{taskError}</p>
+                  <div className="bg-error/15 border border-error/30 rounded-lg p-3">
+                    <p className="text-sm text-error">{taskError}</p>
                   </div>
                 )}
                 {taskSuccess && (
-                  <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-3">
-                    <p className="text-sm text-green-400">{taskSuccess}</p>
+                  <div className="bg-success/15 border border-success/30 rounded-lg p-3">
+                    <p className="text-sm text-success">{taskSuccess}</p>
                   </div>
                 )}
                 <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
@@ -625,14 +796,14 @@ const Dashboard = () => {
                       setTaskError('');
                       setTaskSuccess('');
                     }}
-                    className="bg-gray-700 hover:bg-gray-600 w-full sm:w-auto"
+                    className="bg-muted hover:bg-muted/80 w-full sm:w-auto"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
                     disabled={creatingTask || staffMembers.length === 0}
-                    className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                    className="w-full sm:w-auto"
                   >
                     {creatingTask ? 'Creating...' : (
                       <>
@@ -648,41 +819,41 @@ const Dashboard = () => {
 
           {loading ? (
             <div className="flex justify-center items-center h-64">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="ktech-spinner"></div>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {/* Pending */}
-              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="ktech-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-300">Pending</h3>
-                  <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                    <Icon name="Clock" size={20} className="text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-muted-foreground">Pending</h3>
+                  <div className="w-10 h-10 rounded-full bg-warning/15 flex items-center justify-center">
+                    <Icon name="Clock" size={20} className="text-warning" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-yellow-400">{stats.pending}</p>
+                <p className="text-3xl font-bold text-warning">{stats.pending}</p>
               </div>
 
               {/* Completed */}
-              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="ktech-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-300">Completed</h3>
-                  <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <Icon name="CheckCircle" size={20} className="text-green-400" />
+                  <h3 className="text-lg font-semibold text-muted-foreground">Completed</h3>
+                  <div className="w-10 h-10 rounded-full bg-success/15 flex items-center justify-center">
+                    <Icon name="CheckCircle" size={20} className="text-success" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-green-400">{stats.completed}</p>
+                <p className="text-3xl font-bold text-success">{stats.completed}</p>
               </div>
 
               {/* Overdue */}
-              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="ktech-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-300">Overdue</h3>
-                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                    <Icon name="AlertCircle" size={20} className="text-red-400" />
+                  <h3 className="text-lg font-semibold text-muted-foreground">Overdue</h3>
+                  <div className="w-10 h-10 rounded-full bg-error/15 flex items-center justify-center">
+                    <Icon name="AlertCircle" size={20} className="text-error" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-red-400">{stats.overdue}</p>
+                <p className="text-3xl font-bold text-error">{stats.overdue}</p>
               </div>
             </div>
           )}
@@ -693,26 +864,20 @@ const Dashboard = () => {
               <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2">My Tasks</h2>
-                  <p className="text-sm sm:text-base text-gray-400">View and manage your assigned tasks</p>
+                  <p className="text-sm sm:text-base text-muted-foreground">View and manage your assigned tasks</p>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                   <Button
                     onClick={() => setTaskFilter('due')}
-                    className={`flex-1 sm:flex-none ${
-                      taskFilter === 'due'
-                        ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
+                    variant={taskFilter === 'due' ? 'default' : 'outline'}
+                    className="flex-1 sm:flex-none"
                   >
                     Due Tasks
                   </Button>
                   <Button
                     onClick={() => setTaskFilter('previous')}
-                    className={`flex-1 sm:flex-none ${
-                      taskFilter === 'previous'
-                        ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
+                    variant={taskFilter === 'previous' ? 'default' : 'outline'}
+                    className="flex-1 sm:flex-none"
                   >
                     Previous Tasks
                   </Button>
@@ -746,7 +911,7 @@ const Dashboard = () => {
 
                 if (filteredTasks.length === 0) {
                   return (
-                    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-gray-400">
+                    <div className="ktech-card p-6 text-center text-muted-foreground">
                       <p>
                         {taskFilter === 'due'
                           ? 'No due tasks. Great job!'
@@ -799,20 +964,20 @@ const Dashboard = () => {
                       return (
                         <div
                           key={taskId || idx}
-                          className="bg-gray-800 rounded-lg border border-gray-700 p-4 hover:border-gray-600 transition-colors cursor-pointer"
+                          className="ktech-card p-4 hover:border-border transition-colors cursor-pointer"
                           onClick={() => navigate(`/task/${taskId}`)}
                         >
                           <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
                             <div className="flex-1 w-full">
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-                                <h3 className="text-base sm:text-lg font-semibold text-white break-words">{taskTitle}</h3>
+                                <h3 className="text-base sm:text-lg font-semibold text-foreground break-words">{taskTitle}</h3>
                                 <span
                                   className={`px-2 py-1 text-xs font-medium rounded-full border ${
                                     status === 'pending'
-                                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                                      ? 'bg-warning/15 text-warning border-yellow-500/30'
                                       : status === 'in_progress'
-                                      ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                                      : 'bg-green-500/20 text-green-400 border-green-500/30'
+                                      ? 'bg-accent/15 text-secondary border border-accent/30'
+                                      : 'bg-success/15 text-success border-success/30'
                                   }`}
                                 >
                                   {(() => {
@@ -827,23 +992,23 @@ const Dashboard = () => {
                                 <span
                                   className={`px-2 py-1 text-xs font-medium rounded-full border ${
                                     taskPriority === 'high'
-                                      ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                      ? 'bg-error/15 text-error border-error/30'
                                       : taskPriority === 'medium'
-                                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                                      : 'bg-green-500/20 text-green-400 border-green-500/30'
+                                      ? 'bg-warning/15 text-warning border-yellow-500/30'
+                                      : 'bg-success/15 text-success border-success/30'
                                   }`}
                                 >
                                   {taskPriority === 'normal' ? 'medium' : taskPriority}
                                 </span>
                               </div>
                               {taskDescription && (
-                                <p className="text-gray-400 text-sm mb-2 line-clamp-2">
+                                <p className="text-muted-foreground text-sm mb-2 line-clamp-2">
                                   {taskDescription}
                                 </p>
                               )}
-                              <div className="flex items-center gap-4 text-sm text-gray-400">
+                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                 {dueDate && (
-                                  <div className={`flex items-center gap-1 ${isOverdue ? 'text-red-400 font-medium' : ''}`}>
+                                  <div className={`flex items-center gap-1 ${isOverdue ? 'text-error font-medium' : ''}`}>
                                     <Icon name="Calendar" size={14} />
                                     <span>
                                       {new Date(dueDate).toLocaleDateString('en-US', {
@@ -862,17 +1027,34 @@ const Dashboard = () => {
                               </div>
                             </div>
                             {!isCompleted && taskFilter === 'due' && (
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleMarkAsDone(item);
-                                }}
-                                className="bg-green-600 hover:bg-green-700 w-full sm:w-auto sm:ml-4 mt-2 sm:mt-0"
+                              <div
+                                className="w-full sm:w-auto sm:ml-4 mt-2 sm:mt-0 space-y-2"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                <Icon name="CheckCircle" size={16} className="mr-2" />
-                                <span className="hidden sm:inline">Mark as Done</span>
-                                <span className="sm:hidden">Done</span>
-                              </Button>
+                                <textarea
+                                  value={completionComments[taskId] || ''}
+                                  onChange={(e) => {
+                                    setCompletionComments((prev) => ({
+                                      ...prev,
+                                      [taskId]: e.target.value,
+                                    }));
+                                  }}
+                                  rows={2}
+                                  placeholder="Add a comment when completing (optional)"
+                                  className="w-full sm:min-w-[220px] bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                />
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMarkAsDone(item);
+                                  }}
+                                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                                >
+                                  <Icon name="CheckCircle" size={16} className="mr-2" />
+                                  <span className="hidden sm:inline">Mark as Done</span>
+                                  <span className="sm:hidden">Done</span>
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -884,106 +1066,109 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Team Member Tasks Overview (Admin Only) */}
-          {userProfile?.role === 'admin' && (
+          {/* Team Member Tasks Overview (Admin/Manager) */}
+          {canViewTeamTasks && (
             <div className="mt-6 sm:mt-8">
               <div className="mb-4">
                 <h2 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2">Team Member Tasks</h2>
-                <p className="text-sm sm:text-base text-gray-400">All tasks assigned to your team members (including completed tasks)</p>
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  {isManager
+                    ? 'Tasks assigned to staff in your department (including completed tasks)'
+                    : 'All tasks assigned to your team members (including completed tasks)'}
+                </p>
               </div>
 
               {loadingTeamTasks ? (
                 <div className="flex justify-center items-center h-32">
-                  <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="ktech-spinner w-8 h-8"></div>
                 </div>
               ) : teamTasks.length === 0 ? (
-                <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-gray-400">
+                <div className="ktech-card p-6 text-center text-muted-foreground">
                   <p>No tasks assigned to team members yet.</p>
                   <p className="text-sm mt-2">Create tasks and assign them to team members to see them here.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700 -mx-3 sm:mx-0">
-                  <table className="min-w-full divide-y divide-gray-700">
-                    <thead className="bg-gray-700 hidden sm:table-header-group">
+                <div className="overflow-x-auto ktech-card -mx-3 sm:mx-0">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted hidden sm:table-header-group">
                       <tr>
-                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Task Title
                         </th>
-                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Assigned To
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Assignees
                         </th>
-                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Status
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Overall Status
                         </th>
-                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Due Date
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-700">
+                    <tbody className="divide-y divide-border">
                       {teamTasks.map((task) => {
                         const assignees = task.task_assignees || [];
-                        const staffAssignees = assignees.filter(a => {
+                        const staffAssignees = assignees.filter((a) => {
                           const assigneeId = a.user_id || a.user?.id;
-                          return staffMembers.some(sm => sm.id === assigneeId);
+                          return staffMembers.some((sm) => sm.id === assigneeId);
                         });
+                        const displayStatus = getTaskDisplayStatusForUser(task, userProfile);
+                        const dueDate = task.due_at || task.due_date;
+                        const assigneeStatus = displayStatus.badgeStatus;
+                        const isTaskOverdue = dueDate && new Date(dueDate) < new Date() && assigneeStatus !== 'completed';
+                        const assigneeNames = staffAssignees
+                          .map((a) => {
+                            const assigneeId = a.user_id || a.user?.id;
+                            const member = staffMembers.find((sm) => sm.id === assigneeId);
+                            const name = member?.full_name || member?.email || a.user?.full_name || a.user?.email || 'Unknown';
+                            const status = (a.status || 'pending').replace('_', ' ');
+                            return `${name} (${status})`;
+                          })
+                          .join(', ');
 
-                        // Show ALL assignees (including completed tasks)
-                        return staffAssignees.map((assignee, idx) => {
-                          const assigneeId = assignee.user_id || assignee.user?.id;
-                          const member = staffMembers.find(sm => sm.id === assigneeId);
-                          const dueDate = task.due_at || task.due_date;
-                          const assigneeStatus = assignee.status || 'pending';
-                          const isOverdue = dueDate && new Date(dueDate) < new Date() && assigneeStatus !== 'completed';
-
-                          return (
-                            <tr
-                              key={`${task.id}-${assigneeId}-${idx}`}
-                              className="hover:bg-gray-700 cursor-pointer transition-colors"
-                              onClick={() => navigate(`/task/${task.id}`)}
-                            >
-                              <td className="px-4 sm:px-6 py-4">
-                                <div className="text-sm font-medium text-white break-words">{task.title}</div>
-                              </td>
-                              <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">
-                                {member?.full_name || member?.email || assignee.user?.full_name || assignee.user?.email || 'Unknown'}
-                              </td>
-                              <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        return (
+                          <tr
+                            key={task.id}
+                            className="hover:bg-muted cursor-pointer transition-colors"
+                            onClick={() => navigate(`/task/${task.id}`)}
+                          >
+                            <td className="px-4 sm:px-6 py-4">
+                              <div className="text-sm font-medium text-foreground break-words">{task.title}</div>
+                            </td>
+                            <td className="px-4 sm:px-6 py-4 text-sm text-muted-foreground break-words">
+                              {assigneeNames || 'No assignees'}
+                            </td>
+                            <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                              <div className="space-y-1">
                                 <span
-                                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                    assigneeStatus === 'pending' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
-                                    assigneeStatus === 'in_progress' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                                    assigneeStatus === 'completed' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                                    'bg-gray-500/20 text-gray-400 border-gray-500/30'
-                                  }`}
+                                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full border ${getStatusBadgeClass(displayStatus.badgeStatus)}`}
                                 >
-                                  {(() => {
-                                    const label = {
-                                      pending: 'Pending',
-                                      in_progress: 'In Progress',
-                                      completed: 'Completed',
-                                    }[assigneeStatus] ?? (assigneeStatus.replace('_', ' ') || 'Pending');
-                                    return label;
-                                  })()}
+                                  {displayStatus.label}
                                 </span>
-                              </td>
-                              <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                                <div className={`text-sm ${isOverdue ? 'text-red-400 font-medium' : 'text-gray-300'}`}>
-                                  {dueDate ? new Date(dueDate).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                  }) : 'No due date'}
-                                  {isOverdue && (
-                                    <span className="ml-2 text-red-400">
-                                      <Icon name="AlertCircle" size={14} />
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        });
+                                {displayStatus.summary?.total > 1 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {displayStatus.summary.completed}/{displayStatus.summary.total} members completed
+                                  </p>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                              <div className={`text-sm ${isTaskOverdue ? 'text-error font-medium' : 'text-muted-foreground'}`}>
+                                {dueDate ? new Date(dueDate).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                }) : 'No due date'}
+                                {isTaskOverdue && (
+                                  <span className="ml-2 text-error">
+                                    <Icon name="AlertCircle" size={14} />
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
                       })}
                     </tbody>
                   </table>

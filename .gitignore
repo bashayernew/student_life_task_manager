@@ -12,3 +12,5 @@ vite.config.*s.*
 .env.development
 *.log
 dist
+backend/data
+backend/node_modules

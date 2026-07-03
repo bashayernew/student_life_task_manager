@@ -6,40 +6,37 @@
 
 @layer base {
   :root {
-    /* Core Colors */
-    --color-primary: #0b1220; /* Deep foundation blue */
-    --color-primary-foreground: #ffffff; /* white */
-    --color-secondary: #0f1a2b; /* Elevated surface blue */
-    --color-secondary-foreground: #ffffff; /* white */
-    --color-accent: #5aa9ff; /* Energetic interaction blue */
-    --color-accent-foreground: #ffffff; /* white */
-    
-    /* Background & Surface */
-    --color-background: #fafbfc; /* Soft neutral gray-50 */
-    --color-foreground: #1a202c; /* High-contrast dark gray-800 */
-    --color-card: #ffffff; /* Clean white surface */
-    --color-card-foreground: #1a202c; /* High-contrast dark gray-800 */
-    --color-popover: #ffffff; /* Clean white surface */
-    --color-popover-foreground: #1a202c; /* High-contrast dark gray-800 */
-    
-    /* Muted & Borders */
-    --color-muted: #f7fafc; /* Light gray-100 */
-    --color-muted-foreground: #718096; /* Balanced secondary gray-500 */
-    --color-border: #e2e8f0; /* Light border gray-200 */
-    --color-input: #ffffff; /* Clean white surface */
-    --color-ring: #5aa9ff; /* Energetic interaction blue */
-    
-    /* Status Colors */
-    --color-success: #22c55e; /* Vibrant completion green-500 */
-    --color-success-foreground: #ffffff; /* white */
-    --color-warning: #f59e0b; /* Attention amber-500 */
-    --color-warning-foreground: #ffffff; /* white */
-    --color-error: #ef4444; /* Clear problem red-500 */
-    --color-error-foreground: #ffffff; /* white */
-    --color-destructive: #ef4444; /* Clear problem red-500 */
-    --color-destructive-foreground: #ffffff; /* white */
-    
-    /* Radius */
+    /* KTech brand palette */
+    --color-primary: #22307D;
+    --color-primary-hover: #1A2662;
+    --color-primary-foreground: #FFFFFF;
+    --color-secondary: #3D50B5;
+    --color-secondary-foreground: #FFFFFF;
+    --color-accent: #6E7FD1;
+    --color-accent-foreground: #FFFFFF;
+
+    --color-background: #FFFFFF;
+    --color-foreground: #1B2240;
+    --color-card: #F4F6FB;
+    --color-card-foreground: #1B2240;
+    --color-popover: #FFFFFF;
+    --color-popover-foreground: #1B2240;
+
+    --color-muted: #F4F6FB;
+    --color-muted-foreground: #5A6484;
+    --color-border: #E2E7F3;
+    --color-input: #FFFFFF;
+    --color-ring: #6E7FD1;
+
+    --color-success: #16A34A;
+    --color-success-foreground: #FFFFFF;
+    --color-warning: #D97706;
+    --color-warning-foreground: #FFFFFF;
+    --color-error: #DC2626;
+    --color-error-foreground: #FFFFFF;
+    --color-destructive: #DC2626;
+    --color-destructive-foreground: #FFFFFF;
+
     --radius: 8px;
   }
 
@@ -48,12 +45,13 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-family: 'Inter', sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', sans-serif;
+    @apply text-foreground;
   }
 
   .font-mono {
@@ -63,11 +61,43 @@
 
 @layer components {
   .shadow-elevation {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(11, 18, 32, 0.15);
+    box-shadow: 0 1px 3px rgba(34, 48, 125, 0.08), 0 4px 12px rgba(34, 48, 125, 0.1);
   }
 
   .shadow-elevation-hover {
-    box-shadow: 0 8px 24px rgba(11, 18, 32, 0.2);
+    box-shadow: 0 8px 24px rgba(34, 48, 125, 0.14);
+  }
+
+  .ktech-page-header {
+    @apply bg-primary text-primary-foreground border-b border-primary-hover;
+  }
+
+  .ktech-page-header h1,
+  .ktech-page-header h2,
+  .ktech-page-header .font-bold {
+    @apply text-primary-foreground;
+  }
+
+  .ktech-page-header .header-subtitle {
+    @apply text-primary-foreground opacity-70;
+  }
+
+  .ktech-header-btn {
+    @apply text-primary-foreground border;
+    background-color: color-mix(in srgb, var(--color-primary-foreground) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary-foreground) 25%, transparent);
+  }
+
+  .ktech-header-btn:hover {
+    background-color: color-mix(in srgb, var(--color-primary-foreground) 20%, transparent);
+  }
+
+  .ktech-card {
+    @apply bg-card rounded-lg border border-border shadow-elevation;
+  }
+
+  .ktech-spinner {
+    @apply w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin;
   }
 
   .transition-micro {
@@ -79,34 +109,13 @@
   }
 
   .focus-ring {
-    @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-4;
-  }
-
-  .animate-bounce-gentle {
-    animation: bounce-gentle 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  @keyframes bounce-gentle {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-  }
-
-  .animate-pulse-subtle {
-    animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  @keyframes pulse-subtle {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+    @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .transition-micro,
-  .hover-lift:hover,
-  .animate-bounce-gentle,
-  .animate-pulse-subtle {
-    animation: none;
+  .hover-lift:hover {
     transition: none;
     transform: none;
   }

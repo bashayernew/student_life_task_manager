@@ -35,14 +35,14 @@ const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
       setLoading(true);
       setError('');
 
-      // Load departments from Supabase
+      // Load departments and staff from API
       const { data: depts, error: deptError } = await taskService?.getDepartments();
       if (deptError) {
         setError('Failed to load departments: ' + deptError?.message);
         return;
       }
 
-      // Load staff members from Supabase  
+      // Load staff members from API  
       const { data: staff, error: staffError } = await taskService?.getStaffMembers();
       if (staffError) {
         setError('Failed to load staff members: ' + staffError?.message);
@@ -92,7 +92,7 @@ const TaskCreationForm = ({ isOpen, onClose, onTaskCreated }) => {
     setError('');
 
     try {
-      // Create task with actual Supabase integration
+      // Create task via API
       const taskData = {
         ...formData,
         created_by: user?.id,

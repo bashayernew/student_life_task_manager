@@ -4,7 +4,7 @@ import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 
 const TaskOverviewTable = ({ onTaskUpdate, refreshTrigger }) => {
-  // Remove mock data arrays - use Supabase data only
+  // Task list comes from API only
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -13,7 +13,7 @@ const TaskOverviewTable = ({ onTaskUpdate, refreshTrigger }) => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
 
-  // Load tasks from Supabase - REPLACE MOCK DATA
+  // Load tasks from API
   useEffect(() => {
     loadTasks();
   }, [refreshTrigger]);
@@ -41,8 +41,8 @@ const TaskOverviewTable = ({ onTaskUpdate, refreshTrigger }) => {
   // ... keep existing utility functions ...
   const getPriorityColor = (priority) => {
     const colors = {
-      low: 'text-blue-600 bg-blue-100',
-      normal: 'text-gray-600 bg-gray-100',
+      low: 'text-secondary bg-accent/15',
+      normal: 'text-muted-foreground bg-muted',
       high: 'text-orange-600 bg-orange-100',
       urgent: 'text-red-600 bg-red-100'
     };
@@ -52,7 +52,7 @@ const TaskOverviewTable = ({ onTaskUpdate, refreshTrigger }) => {
   const getStatusColor = (status) => {
     const colors = {
       pending: 'text-yellow-600 bg-yellow-100',
-      in_progress: 'text-blue-600 bg-blue-100',
+      in_progress: 'text-secondary bg-accent/15',
       completed: 'text-green-600 bg-green-100'
     };
     return colors?.[status] || colors?.pending;

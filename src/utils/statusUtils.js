@@ -1,16 +1,16 @@
-// Status badge color mapping
 export const statusColors = {
-  pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  in_progress: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  completed: 'bg-green-500/20 text-green-400 border-green-500/30',
-  cancelled: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  pending: 'bg-warning/15 text-warning border-warning/30',
+  partial: 'bg-accent/15 text-secondary border-accent/40',
+  in_progress: 'bg-accent/15 text-secondary border-accent/40',
+  completed: 'bg-success/15 text-success border-success/30',
+  cancelled: 'bg-muted text-muted-foreground border-border',
 };
 
 export const priorityColors = {
-  high: 'bg-red-500/20 text-red-400 border-red-500/30',
-  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  low: 'bg-green-500/20 text-green-400 border-green-500/30',
-  normal: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  high: 'bg-error/15 text-error border-error/30',
+  medium: 'bg-warning/15 text-warning border-warning/30',
+  low: 'bg-success/15 text-success border-success/30',
+  normal: 'bg-muted text-muted-foreground border-border',
 };
 
 export const getStatusBadgeClass = (status) => {
@@ -18,7 +18,6 @@ export const getStatusBadgeClass = (status) => {
 };
 
 export const getPriorityBadgeClass = (priority) => {
-  // Normalize 'normal' to 'medium' for consistency
   const normalizedPriority = priority === 'normal' ? 'medium' : priority;
   return priorityColors[normalizedPriority] || priorityColors.medium;
 };
@@ -52,3 +51,49 @@ export const formatDateTime = (dateString) => {
   });
 };
 
+export function getTaskAssigneeSummary(task) {
+  const assignees = task?.task_assignees || [];
+  const total = assignees.length;
+  const completed = assignees.filter((a) => (a.status || 'pending') === 'completed').length;
+  const pending = total - completed;
+
+  let overall_status = 'pending';
+  if (total === 0) {
+    overall_status = 'pending';
+  } else if (completed === total) {
+    overall_status = 'completed';
+  } else if (completed > 0) {
+    overall_status = 'partial';
+  }
+
+  return { total, completed, pending, overall_status };
+}
+
+export function getTaskDisplayStatusForUser(task, userProfile) {
+  const assignees = task?.task_assignees || [];
+  const userAssignment = assignees.find(
+    (a) => a.user_id === userProfile?.id || a.user?.id === userProfile?.id
+  );
+  const summary = getTaskAssigneeSummary(task);
+
+  if (userProfile?.role === 'admin' || userProfile?.role === 'manager') {
+    if (summary.overall_status === 'completed') {
+      return { badgeStatus: 'completed', label: 'Completed', summary };
+    }
+    if (summary.overall_status === 'partial') {
+      return {
+        badgeStatus: 'pending',
+        label: `Pending (${summary.completed}/${summary.total} done)`,
+        summary,
+      };
+    }
+    return { badgeStatus: 'pending', label: 'Pending', summary };
+  }
+
+  const status = userAssignment?.status || 'pending';
+  return {
+    badgeStatus: status,
+    label: status.replace('_', ' '),
+    summary,
+  };
+}

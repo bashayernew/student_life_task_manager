@@ -11,6 +11,8 @@ import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import TaskDetail from './pages/TaskDetail';
 import Staff from './pages/Staff';
+import Departments from './pages/Departments';
+import Account from './pages/Account';
 import NotFound from './pages/NotFound';
 
 // Redirect authenticated users away from login
@@ -18,8 +20,8 @@ const LoginRoute = () => {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="ktech-spinner" />
       </div>
     );
   }
@@ -67,6 +69,22 @@ const Routes = () => {
               element={
                 <ProtectedRoute requireAdmin={true}>
                   <Staff />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/departments"
+              element={
+                <ProtectedRoute requireAdmin={true}>
+                  <Departments />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/account"
+              element={
+                <ProtectedRoute>
+                  <Account />
                 </ProtectedRoute>
               }
             />

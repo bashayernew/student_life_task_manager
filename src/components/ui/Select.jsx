@@ -42,16 +42,22 @@ const Select = React.forwardRef(({
 
     // Get selected option(s) for display
     const getSelectedDisplay = () => {
-        if (!value) return placeholder;
-
         if (multiple) {
-            const selectedOptions = options?.filter(opt => value?.includes(opt?.value));
-            if (selectedOptions?.length === 0) return placeholder;
-            if (selectedOptions?.length === 1) return selectedOptions?.[0]?.label;
-            return `${selectedOptions?.length} items selected`;
+            const selectedValues = Array.isArray(value) ? value : [];
+            if (selectedValues.length === 0) return placeholder;
+
+            const selectedOptions = options?.filter((opt) =>
+                selectedValues.some((selected) => String(selected) === String(opt?.value))
+            ) || [];
+
+            if (selectedOptions.length === 1) return selectedOptions[0]?.label;
+            if (selectedOptions.length > 1) return `${selectedOptions.length} departments selected`;
+            return `${selectedValues.length} selected`;
         }
 
-        const selectedOption = options?.find(opt => opt?.value === value);
+        if (value === undefined || value === null || value === '') return placeholder;
+
+        const selectedOption = options?.find((opt) => String(opt?.value) === String(value));
         return selectedOption ? selectedOption?.label : placeholder;
     };
 
@@ -68,17 +74,22 @@ const Select = React.forwardRef(({
 
     const handleOptionSelect = (option) => {
         if (multiple) {
-            const newValue = value || [];
+            const newValue = Array.isArray(value) ? value : [];
             const optionValue = option?.value ?? option;
-            const updatedValue = newValue?.includes(optionValue)
-                ? newValue?.filter(v => v !== optionValue)
+            const optionKey = String(optionValue);
+            const updatedValue = newValue.some((entry) => String(entry) === optionKey)
+                ? newValue.filter((entry) => String(entry) !== optionKey)
                 : [...newValue, optionValue];
             onChange?.(updatedValue);
+            setIsOpen(false);
+            onOpenChange?.(false);
+            setSearchTerm("");
         } else {
             const optionValue = option?.value ?? option;
             onChange?.(optionValue);
             setIsOpen(false);
             onOpenChange?.(false);
+            setSearchTerm("");
         }
     };
 
@@ -93,12 +104,15 @@ const Select = React.forwardRef(({
 
     const isSelected = (optionValue) => {
         if (multiple) {
-            return value?.includes(optionValue) || false;
+            const selectedValues = Array.isArray(value) ? value : [];
+            return selectedValues.some((entry) => String(entry) === String(optionValue));
         }
-        return value === optionValue;
+        return String(value) === String(optionValue);
     };
 
-    const hasValue = multiple ? value?.length > 0 : value !== undefined && value !== '';
+    const hasValue = multiple
+        ? Array.isArray(value) && value.length > 0
+        : value !== undefined && value !== null && value !== '';
 
     return (
         <div className={cn("relative", className)}>
@@ -107,11 +121,11 @@ const Select = React.forwardRef(({
                     htmlFor={selectId}
                     className={cn(
                         "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mb-2 block",
-                        error ? "text-red-400" : "text-gray-300"
+                        error ? "text-error" : "text-muted-foreground"
                     )}
                 >
                     {label}
-                    {required && <span className="text-red-400 ml-1">*</span>}
+                    {required && <span className="text-error ml-1">*</span>}
                 </label>
             )}
             <div className="relative">
@@ -121,10 +135,10 @@ const Select = React.forwardRef(({
                     role="button"
                     tabIndex={0}
                     className={cn(
-                        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-gray-700 text-white px-3 py-2 text-sm ring-offset-background placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer",
+                        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer",
                         disabled && "cursor-not-allowed opacity-50",
                         error && "border-red-500 focus:ring-red-500",
-                        !hasValue && "text-gray-400"
+                        !hasValue && "text-muted-foreground"
                     )}
                     onClick={disabled ? undefined : handleToggle}
                     onKeyDown={(e) => {
@@ -187,16 +201,16 @@ const Select = React.forwardRef(({
 
                 {/* Dropdown */}
                 {isOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-gray-800 text-white border border-gray-600 rounded-md shadow-lg">
+                    <div className="absolute z-50 w-full mt-1 bg-popover text-popover-foreground border border-border shadow-elevation rounded-md shadow-lg">
                         {searchable && (
-                            <div className="p-2 border-b border-gray-700">
+                            <div className="p-2 border-b border-border">
                                 <div className="relative">
-                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                     <Input
                                         placeholder="Search options..."
                                         value={searchTerm}
                                         onChange={handleSearchChange}
-                                        className="pl-8 bg-gray-700 border-gray-600 text-white"
+                                        className="pl-8 bg-background border-border text-foreground"
                                     />
                                 </div>
                             </div>
@@ -204,7 +218,7 @@ const Select = React.forwardRef(({
 
                         <div className="py-1 max-h-60 overflow-auto">
                             {filteredOptions?.length === 0 ? (
-                                <div className="px-3 py-2 text-sm text-gray-400">
+                                <div className="px-3 py-2 text-sm text-muted-foreground">
                                     {searchTerm ? 'No options found' : 'No options available'}
                                 </div>
                             ) : (
@@ -214,8 +228,8 @@ const Select = React.forwardRef(({
                                         role="button"
                                         tabIndex={0}
                                         className={cn(
-                                            "relative flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-gray-700",
-                                            isSelected(option?.value) && "bg-blue-600 text-white",
+                                            "relative flex cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-muted",
+                                            isSelected(option?.value) && "bg-primary text-primary-foreground",
                                             option?.disabled && "pointer-events-none opacity-50"
                                         )}
                                         onClick={() => !option?.disabled && handleOptionSelect(option)}
@@ -231,7 +245,7 @@ const Select = React.forwardRef(({
                                             <Check className="h-4 w-4" />
                                         )}
                                         {option?.description && (
-                                            <span className="text-xs text-gray-400 ml-2">
+                                            <span className="text-xs text-muted-foreground ml-2">
                                                 {option?.description}
                                             </span>
                                         )}
