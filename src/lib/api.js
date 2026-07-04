@@ -1,14 +1,44 @@
 import axios from 'axios';
 
-/** Same-origin `/api` by default (vercel dev + production). Set VITE_API_URL only for cross-origin API. */
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').trim().replace(/\/+$/, '');
+/**
+ * API origin for cross-origin deployments only.
+ * Leave VITE_API_URL empty in Vercel/local so requests use same-origin `/api/*`.
+ */
+function resolveApiOrigin() {
+  const raw = (import.meta.env.VITE_API_URL ?? '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+
+  // Ignore localhost targets in production (common misconfigured Vercel env var).
+  if (
+    import.meta.env.PROD &&
+    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(raw)
+  ) {
+    console.warn('[api] Ignoring localhost VITE_API_URL in production; using same-origin /api');
+    return '';
+  }
+
+  return raw;
+}
+
+const API_ORIGIN = resolveApiOrigin();
 
 export const api = axios.create({
-  baseURL: API_ORIGIN ? `${API_ORIGIN}/api` : '/api',
+  baseURL: API_ORIGIN,
   headers: { 'Content-Type': 'application/json' },
 });
 
+/** Ensure relative requests always target `/api/...` on the current host. */
+export function normalizeApiPath(url) {
+  if (!url || /^https?:\/\//i.test(url)) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  return path.startsWith('/api') ? path : `/api${path}`;
+}
+
 api.interceptors.request.use((config) => {
+  if (config.url) {
+    config.url = normalizeApiPath(config.url);
+  }
+
   const token = localStorage.getItem('auth_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -38,7 +68,7 @@ function extractError(error) {
 
 export async function apiRequest(method, url, data) {
   try {
-    const response = await api({ method, url, data });
+    const response = await api({ method, url: normalizeApiPath(url), data });
     return { data: response.data, error: null };
   } catch (error) {
     return { data: null, error: extractError(error) };
