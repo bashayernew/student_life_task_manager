@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import Select from '../components/ui/Select';
 import { getStatusBadgeClass, getPriorityBadgeClass, isOverdue, formatDateTime, getTaskAssigneeSummary } from '../utils/statusUtils';
 import Icon from '../components/AppIcon';
+import AppPageHeader from '../components/AppPageHeader';
 
 function formatCommentAudience(comment) {
   if (!comment?.recipients?.length || comment.audience === 'everyone') {
@@ -17,7 +18,7 @@ function formatCommentAudience(comment) {
 
 const TaskDetail = () => {
   const { id } = useParams();
-  const { userProfile, signOut } = useAuth();
+  const { userProfile } = useAuth();
   const navigate = useNavigate();
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
@@ -212,11 +213,6 @@ const TaskDetail = () => {
     setSubmittingComment(false);
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
   const handleReopenAssignee = async (assigneeId) => {
     setSubmittingAction(true);
     setActionError('');
@@ -295,36 +291,7 @@ const TaskDetail = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background text-foreground">
-        <header className="ktech-page-header">
-          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center h-auto sm:h-16 py-3 sm:py-0 gap-3 sm:gap-4">
-              <div className="w-full sm:w-auto">
-                <Button
-                  onClick={() => navigate('/tasks')}
-                  className="ktech-header-btn text-xs sm:text-sm w-full sm:w-auto"
-                >
-                  <Icon name="ArrowLeft" size={14} className="sm:mr-2" />
-                  <span className="hidden sm:inline">Back to Tasks</span>
-                  <span className="sm:hidden">Back</span>
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                <Button onClick={() => navigate('/tasks')} className="ktech-header-btn text-xs sm:text-sm flex-1 sm:flex-none min-w-[100px]">
-                  Tasks
-                </Button>
-                <Button onClick={() => navigate('/dashboard')} className="ktech-header-btn text-xs sm:text-sm flex-1 sm:flex-none min-w-[100px]">
-                  Dashboard
-                </Button>
-                <Button onClick={() => navigate('/account')} className="ktech-header-btn text-xs sm:text-sm flex-1 sm:flex-none min-w-[100px]">
-                  Account
-                </Button>
-                <Button onClick={handleLogout} className="ktech-header-btn text-xs sm:text-sm flex-1 sm:flex-none min-w-[100px]">
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppPageHeader title="Task Details" backTo="/tasks" backLabel="Back to Tasks" />
 
         <main className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8 space-y-6">
           <div className="ktech-card p-4 sm:p-6">

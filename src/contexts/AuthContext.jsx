@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, setAuthToken, getAuthToken } from '../lib/api';
 
 const AuthContext = createContext({});
@@ -87,6 +87,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshProfile = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) {
+      return { data: null, error: { message: 'Not signed in' } };
+    }
+
+    setProfileLoading(true);
+    try {
+      const { data } = await api.get('/auth/me');
+      applySession(data);
+      return { data: data.profile, error: null };
+    } catch (error) {
+      return {
+        error: { message: error?.response?.data?.error || 'Failed to refresh profile' },
+      };
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
   const value = {
     user,
     userProfile,
@@ -95,6 +115,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signOut,
     updateProfile,
+    refreshProfile,
     isAuthenticated: !!user,
   };
 

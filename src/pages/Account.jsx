@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authService } from '../utils/authService';
+import { taskService } from '../utils/taskService';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import Icon from '../components/AppIcon';
-import KTechBrand from '../components/KTechBrand';
+import AppPageHeader from '../components/AppPageHeader';
 
 const Account = () => {
-  const { userProfile, signOut } = useAuth();
-  const navigate = useNavigate();
+  const { userProfile, refreshProfile } = useAuth();
+  const [departments, setDepartments] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingScope, setLoadingScope] = useState(true);
   const [formData, setFormData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -19,6 +20,39 @@ const Account = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadAccountScope = async () => {
+      setLoadingScope(true);
+      const { data: profile } = await refreshProfile();
+
+      if (!active) return;
+
+      const nextDepartments = profile?.departments || userProfile?.departments || [];
+      setDepartments(nextDepartments);
+
+      if (profile?.role === 'manager') {
+        const { data: staff } = await taskService.getStaffMembers();
+        if (active) {
+          setTeamMembers(staff || []);
+        }
+      } else {
+        setTeamMembers([]);
+      }
+
+      if (active) {
+        setLoadingScope(false);
+      }
+    };
+
+    loadAccountScope();
+
+    return () => {
+      active = false;
+    };
+  }, [refreshProfile]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -68,35 +102,22 @@ const Account = () => {
     setSubmitting(false);
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
+  const getTeamForDepartment = (departmentId) =>
+    teamMembers.filter((member) =>
+      member.departments?.some((dept) => dept.id === departmentId) ||
+      member.department_ids?.includes(departmentId)
+    );
+
+  const displayedDepartments = departments.length
+    ? departments
+    : userProfile?.departments || [];
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background text-foreground">
-        <header className="ktech-page-header">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <KTechBrand title="Account" onDark titleClassName="text-primary-foreground" />
-              <div className="flex items-center gap-4">
-                <Button onClick={() => navigate('/dashboard')} className="ktech-header-btn">
-                  Dashboard
-                </Button>
-                <Button onClick={() => navigate('/tasks')} className="ktech-header-btn">
-                  Tasks
-                </Button>
-                <Button onClick={handleLogout} className="ktech-header-btn">
-                  <Icon name="LogOut" size={16} className="mr-2" />
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppPageHeader title="Account" />
 
-        <main className="max-w-xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           {(userProfile?.role === 'manager' || userProfile?.role === 'staff') && (
             <div className="ktech-card p-6">
               <h2 className="text-xl font-bold mb-1">Your Departments</h2>
@@ -105,9 +126,11 @@ const Account = () => {
                   ? 'Departments you manage on this platform.'
                   : 'Departments you belong to on this platform.'}
               </p>
-              {userProfile?.departments?.length ? (
+              {loadingScope ? (
+                <p className="text-sm text-muted-foreground">Loading departments...</p>
+              ) : displayedDepartments.length ? (
                 <ul className="space-y-2">
-                  {userProfile.departments.map((dept) => (
+                  {displayedDepartments.map((dept) => (
                     <li
                       key={dept.id}
                       className="rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
@@ -119,6 +142,65 @@ const Account = () => {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No departments assigned yet. Contact an admin if this looks wrong.
+                </p>
+              )}
+            </div>
+          )}
+
+          {userProfile?.role === 'manager' && (
+            <div className="ktech-card p-6">
+              <h2 className="text-xl font-bold mb-1">Your Team</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Staff in your departments that you can assign tasks to.
+              </p>
+              {loadingScope ? (
+                <p className="text-sm text-muted-foreground">Loading team members...</p>
+              ) : displayedDepartments.length ? (
+                <div className="space-y-5">
+                  {displayedDepartments.map((dept) => {
+                    const members = getTeamForDepartment(dept.id);
+                    return (
+                      <div key={dept.id}>
+                        <h3 className="text-sm font-semibold text-foreground mb-2">{dept.name}</h3>
+                        {members.length ? (
+                          <ul className="space-y-2">
+                            {members.map((member) => (
+                              <li
+                                key={member.id}
+                                className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm"
+                              >
+                                <span className="font-medium text-foreground">{member.full_name}</span>
+                                <span className="text-muted-foreground"> · {member.email}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No staff assigned to this department yet.</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : teamMembers.length ? (
+                <ul className="space-y-2">
+                  {teamMembers.map((member) => (
+                    <li
+                      key={member.id}
+                      className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium text-foreground">{member.full_name}</span>
+                      <span className="text-muted-foreground"> · {member.email}</span>
+                      {member.departments?.length ? (
+                        <span className="block text-xs text-muted-foreground mt-1">
+                          {member.departments.map((dept) => dept.name).join(', ')}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No staff in your departments yet.
                 </p>
               )}
             </div>

@@ -7,10 +7,10 @@ import Button from '../components/ui/Button';
 import Select from '../components/ui/Select';
 import { getStatusBadgeClass, getPriorityBadgeClass, isOverdue, formatDate, getTaskDisplayStatusForUser, getTaskAssigneeSummary } from '../utils/statusUtils';
 import Icon from '../components/AppIcon';
-import KTechBrand from '../components/KTechBrand';
+import AppPageHeader from '../components/AppPageHeader';
 
 const Tasks = () => {
-  const { userProfile, signOut } = useAuth();
+  const { userProfile } = useAuth();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -39,11 +39,6 @@ const Tasks = () => {
     if (data) {
       setDepartments(data);
     }
-  };
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
   };
 
   const isLead = userProfile?.role === 'admin' || userProfile?.role === 'manager';
@@ -95,56 +90,7 @@ const Tasks = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background text-foreground">
-        {/* Header */}
-        <header className="ktech-page-header">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <KTechBrand title="Tasks" onDark titleClassName="text-primary-foreground" />
-              <div className="flex items-center gap-4">
-                <Button
-                  onClick={() => navigate('/dashboard')}
-                  className="ktech-header-btn"
-                >
-                  Dashboard
-                </Button>
-                {userProfile?.role === 'admin' && (
-                  <>
-                    <Button
-                      onClick={() => navigate('/staff')}
-                      className="ktech-header-btn"
-                    >
-                      Staff
-                    </Button>
-                    <Button
-                      onClick={() => navigate('/departments')}
-                      className="ktech-header-btn"
-                    >
-                      Departments
-                    </Button>
-                  </>
-                )}
-                <Button
-                  onClick={() => navigate('/tasks')}
-                  className="ktech-header-btn"
-                >
-                  Tasks
-                </Button>
-                <Button
-                  onClick={() => navigate('/account')}
-                  className="ktech-header-btn"
-                >
-                  Account
-                </Button>
-                <Button
-                  onClick={handleLogout}
-                  className="ktech-header-btn"
-                >
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppPageHeader title="Tasks" />
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">

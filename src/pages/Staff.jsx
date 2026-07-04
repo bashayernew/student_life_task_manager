@@ -8,11 +8,10 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
-import Icon from '../components/AppIcon';
-import KTechBrand from '../components/KTechBrand';
+import AppPageHeader from '../components/AppPageHeader';
 
 const Staff = () => {
-  const { userProfile, signOut } = useAuth();
+  const { userProfile } = useAuth();
   const navigate = useNavigate();
   const [staff, setStaff] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -32,6 +31,7 @@ const Staff = () => {
   });
   const [assigningUserId, setAssigningUserId] = useState(null);
   const [confirmManagerDepts, setConfirmManagerDepts] = useState(null);
+  const [pendingDeptSelection, setPendingDeptSelection] = useState({});
 
   const departmentSelectOptions = departments.map((dept) => ({
     value: dept.id,
@@ -127,6 +127,38 @@ const Staff = () => {
     }
 
     await applyDepartmentAssignment(userId, departmentIds, memberRole);
+  };
+
+  const getDepartmentSelectValue = (member) => {
+    if (pendingDeptSelection[member.id] !== undefined) {
+      return pendingDeptSelection[member.id];
+    }
+    return getMemberDepartmentValue(member);
+  };
+
+  const handleDepartmentSelectClose = (member, isOpen) => {
+    if (isOpen || (member.role !== 'staff' && member.role !== 'manager')) return;
+    if (pendingDeptSelection[member.id] === undefined) return;
+
+    const finalValue = pendingDeptSelection[member.id];
+    setPendingDeptSelection((prev) => {
+      const next = { ...prev };
+      delete next[member.id];
+      return next;
+    });
+    handleAssignDepartment(member.id, finalValue, member.role, member.full_name);
+  };
+
+  const handleDepartmentSelectChange = (member, value) => {
+    const isMulti = member.role === 'staff' || member.role === 'manager';
+    if (isMulti) {
+      setPendingDeptSelection((prev) => ({
+        ...prev,
+        [member.id]: Array.isArray(value) ? value : [],
+      }));
+      return;
+    }
+    handleAssignDepartment(member.id, value, member.role, member.full_name);
   };
 
   const handleConfirmManagerDepartments = async () => {
@@ -250,52 +282,13 @@ const Staff = () => {
     }
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
   return (
     <ProtectedRoute requireAdmin={true}>
       <div className="min-h-screen bg-background text-foreground">
-        {/* Header */}
-        <header className="ktech-page-header">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <KTechBrand
-                title="Staff Management"
-                onDark
-                titleClassName="text-primary-foreground"
-              />
-              <div className="flex items-center gap-4">
-                <Button onClick={() => navigate('/dashboard')} className="ktech-header-btn">
-                  Dashboard
-                </Button>
-                <Button onClick={() => navigate('/departments')} className="ktech-header-btn">
-                  Departments
-                </Button>
-                <Button onClick={() => navigate('/tasks')} className="ktech-header-btn">
-                  Tasks
-                </Button>
-                <Button
-                  onClick={() => navigate('/account')}
-                  className="ktech-header-btn"
-                >
-                  Account
-                </Button>
-                <Button
-                  onClick={handleLogout}
-                  className="ktech-header-btn"
-                >
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppPageHeader title="Staff Management" />
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
           {(error || success) && (
             <div className="mb-6 space-y-3">
               {error && (
@@ -312,7 +305,7 @@ const Staff = () => {
           )}
 
           {/* Create Staff Form */}
-          <div className="ktech-card p-6 mb-8">
+          <div className="ktech-card p-4 sm:p-6 mb-6 sm:mb-8">
             <h2 className="text-xl font-bold mb-4">Create New Staff Member</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -447,10 +440,10 @@ const Staff = () => {
           </div>
 
                 {/* Staff List */}
-                <div className="ktech-card overflow-hidden">
-                  <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+                <div className="ktech-card overflow-visible">
+                  <div className="px-4 sm:px-6 py-4 border-b border-border flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
                     <h2 className="text-lg sm:text-xl font-bold">Staff Members</h2>
-                    <div className="text-xs sm:text-sm text-muted-foreground text-right max-w-xs">
+                    <div className="text-xs sm:text-sm text-muted-foreground sm:text-right sm:max-w-md">
                       <p>Passwords are stored securely and cannot be viewed after creation.</p>
                       <p className="mt-1">
                         Assign departments to staff and managers (multiple allowed for both). Managers can only assign tasks to staff in their departments.{' '}
@@ -469,7 +462,7 @@ const Staff = () => {
                 <div className="ktech-spinner"></div>
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-3 sm:mx-0">
+              <div className="overflow-x-auto overflow-y-visible -mx-3 sm:mx-0">
                 <table className="w-full">
                          <thead className="bg-muted hidden sm:table-header-group">
                            <tr>
@@ -529,8 +522,9 @@ const Staff = () => {
                                            <Select
                                              key={`${member.id}-mobile-dept`}
                                              label={member.role === 'staff' || member.role === 'manager' ? 'Departments' : 'Department'}
-                                             value={getMemberDepartmentValue(member)}
-                                             onChange={(value) => handleAssignDepartment(member.id, value, member.role, member.full_name)}
+                                             value={getDepartmentSelectValue(member)}
+                                             onChange={(value) => handleDepartmentSelectChange(member, value)}
+                                             onOpenChange={(open) => handleDepartmentSelectClose(member, open)}
                                              options={getDepartmentOptionsForMember(member)}
                                              multiple={member.role === 'staff' || member.role === 'manager'}
                                              disabled={assigningUserId === member.id}
@@ -622,8 +616,9 @@ const Staff = () => {
                                      ) : (
                                        <Select
                                          key={`${member.id}-dept`}
-                                         value={getMemberDepartmentValue(member)}
-                                         onChange={(value) => handleAssignDepartment(member.id, value, member.role, member.full_name)}
+                                         value={getDepartmentSelectValue(member)}
+                                         onChange={(value) => handleDepartmentSelectChange(member, value)}
+                                         onOpenChange={(open) => handleDepartmentSelectClose(member, open)}
                                          options={getDepartmentOptionsForMember(member)}
                                          multiple={member.role === 'staff' || member.role === 'manager'}
                                          disabled={assigningUserId === member.id}

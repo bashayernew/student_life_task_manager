@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { departmentService } from '../utils/departmentService';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import KTechBrand from '../components/KTechBrand';
+import AppPageHeader from '../components/AppPageHeader';
 
 const Departments = () => {
-  const { signOut } = useAuth();
   const navigate = useNavigate();
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,42 +86,10 @@ const Departments = () => {
     setSubmitting(false);
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
   return (
     <ProtectedRoute requireAdmin={true}>
       <div className="min-h-screen bg-background text-foreground">
-        <header className="ktech-page-header">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <KTechBrand
-                title="Departments"
-                onDark
-                titleClassName="text-primary-foreground"
-              />
-              <div className="flex items-center gap-4">
-                <Button onClick={() => navigate('/dashboard')} className="ktech-header-btn">
-                  Dashboard
-                </Button>
-                <Button onClick={() => navigate('/staff')} className="ktech-header-btn">
-                  Staff
-                </Button>
-                <Button onClick={() => navigate('/tasks')} className="ktech-header-btn">
-                  Tasks
-                </Button>
-                <Button onClick={() => navigate('/account')} className="ktech-header-btn">
-                  Account
-                </Button>
-                <Button onClick={handleLogout} className="ktech-header-btn">
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppPageHeader title="Departments" />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {(error || success) && (
