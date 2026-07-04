@@ -83,7 +83,7 @@ All routes are under `/api`:
 ## Project structure
 
 ```
-├── api/index.js          # Vercel serverless entry (serverless-http + Express app)
+├── api/index.js          # Vercel serverless entry (Express app export)
 ├── backend/src/          # Express app, routes, Neon db layer
 ├── src/                  # React frontend
 ├── vercel.json           # Build output, SPA + API rewrites

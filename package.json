@@ -61,7 +61,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "serverless-http": "^3.2.0",
     "uuid": "^11.0.5",
     "student-life-task-manager-api": "file:./backend"
   },
