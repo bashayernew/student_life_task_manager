@@ -17,6 +17,7 @@ export default defineConfig({
     host: "0.0.0.0",
     strictPort: false,
     allowedHosts: ['.amazonaws.com', '.builtwithrocket.new'],
+    // Used only with `npm run dev:vite` (split dev). Primary workflow: `npm run dev` → vercel dev.
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

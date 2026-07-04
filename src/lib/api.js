@@ -1,9 +1,10 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+/** Same-origin `/api` by default (vercel dev + production). Set VITE_API_URL only for cross-origin API. */
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').trim().replace(/\/+$/, '');
 
 export const api = axios.create({
-  baseURL: `${API_URL}/api`,
+  baseURL: API_ORIGIN ? `${API_ORIGIN}/api` : '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 

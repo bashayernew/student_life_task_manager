@@ -11,8 +11,20 @@ function getConnectionString() {
   return `${raw}${sep}sslmode=require`;
 }
 
-/** @type {import('@neondatabase/serverless').NeonQueryFunction} */
-export const sql = neon(getConnectionString());
+/** @type {import('@neondatabase/serverless').NeonQueryFunction | null} */
+let _sql = null;
+
+function getSql() {
+  if (!_sql) {
+    _sql = neon(getConnectionString());
+  }
+  return _sql;
+}
+
+/** Tagged-template or parameterized query (lazy-connects after env is loaded). */
+export function sql(strings, ...values) {
+  return getSql()(strings, ...values);
+}
 
 /** Dynamic SQL with $1, $2 placeholders (for UPDATE builders). */
 export async function query(text, params = []) {
