@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
+import { sql } from '../db.js';
 import { authMiddleware, requireAdmin } from '../middleware/auth.js';
 import {
   getUserById,
@@ -19,27 +19,29 @@ const router = Router();
 
 router.use(authMiddleware);
 
-function getStaffUser(userId) {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+async function getStaffUser(userId) {
+  const rows = await sql`SELECT * FROM users WHERE id = ${userId}`;
+  return rows[0] ?? null;
 }
 
-router.get('/', (_req, res) => {
-  const rows = db.prepare(`
+router.get('/', async (_req, res) => {
+  const rows = await sql`
     SELECT u.*
     FROM users u
     ORDER BY u.full_name
-  `).all();
+  `;
 
-  res.json(rows.map(formatDepartmentsPayload));
+  const payload = await Promise.all(rows.map((row) => formatDepartmentsPayload(row)));
+  res.json(payload);
 });
 
-router.get('/assignable', (req, res) => {
-  const user = getUserById(req.user.id);
+router.get('/assignable', async (req, res) => {
+  const user = await getUserById(req.user.id);
   if (!user) {
     return res.status(401).json({ error: 'User not found' });
   }
 
-  if (user.role === 'manager' && !getManagerDepartmentIds(user.id).length) {
+  if (user.role === 'manager' && !(await getManagerDepartmentIds(user.id)).length) {
     return res.json([]);
   }
 
@@ -47,11 +49,12 @@ router.get('/assignable', (req, res) => {
     return res.status(403).json({ error: 'You do not have permission to view assignable staff' });
   }
 
-  const rows = getAssignableStaff(user);
-  res.json(rows.map(formatAssignableStaff));
+  const rows = await getAssignableStaff(user);
+  const payload = await Promise.all(rows.map((row) => formatAssignableStaff(row)));
+  res.json(payload);
 });
 
-router.post('/', requireAdmin, (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   const {
     email,
     password,
@@ -89,38 +92,40 @@ router.post('/', requireAdmin, (req, res) => {
   }
 
   if (department && role === 'staff' && !staffDepartmentIds.length) {
-    const existing = db.prepare('SELECT id FROM departments WHERE lower(name) = lower(?)').get(department.trim());
-    if (existing) {
-      staffDepartmentIds = [existing.id];
+    const existing = await sql`
+      SELECT id FROM departments WHERE lower(name) = lower(${department.trim()})
+    `;
+    if (existing[0]) {
+      staffDepartmentIds = [existing[0].id];
     } else {
       const newDeptId = uuidv4();
-      db.prepare('INSERT INTO departments (id, name) VALUES (?, ?)').run(newDeptId, department.trim());
+      await sql`INSERT INTO departments (id, name) VALUES (${newDeptId}, ${department.trim()})`;
       staffDepartmentIds = [newDeptId];
     }
   }
 
   const id = uuidv4();
   try {
-    db.prepare(`
+    await sql`
       INSERT INTO users (id, email, password_hash, full_name, role, department_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      email.trim(),
-      bcrypt.hashSync(pwd, 10),
-      name.trim(),
-      role,
-      role === 'manager' ? managerDepartmentIds[0] || null : staffDepartmentIds[0] || null
-    );
+      VALUES (
+        ${id},
+        ${email.trim()},
+        ${bcrypt.hashSync(pwd, 10)},
+        ${name.trim()},
+        ${role},
+        ${role === 'manager' ? managerDepartmentIds[0] || null : staffDepartmentIds[0] || null}
+      )
+    `;
 
     if (role === 'staff' && staffDepartmentIds.length) {
-      setUserDepartments(id, staffDepartmentIds);
-      syncLegacyDepartmentId(id);
+      await setUserDepartments(id, staffDepartmentIds);
+      await syncLegacyDepartmentId(id);
     }
 
     if (role === 'manager' && managerDepartmentIds.length) {
-      setUserDepartments(id, managerDepartmentIds);
-      syncLegacyDepartmentId(id);
+      await setUserDepartments(id, managerDepartmentIds);
+      await syncLegacyDepartmentId(id);
     }
 
     res.status(201).json({
@@ -132,7 +137,7 @@ router.post('/', requireAdmin, (req, res) => {
       message: `Staff member created successfully. They can now login with: ${email.trim()}`,
     });
   } catch (err) {
-    if (err.message?.includes('UNIQUE')) {
+    if (err.code === '23505') {
       return res.status(400).json({ error: 'Email already exists' });
     }
     if (err.message === 'Department not found') {
@@ -142,25 +147,27 @@ router.post('/', requireAdmin, (req, res) => {
   }
 });
 
-router.patch('/:id/role', requireAdmin, (req, res) => {
+router.patch('/:id/role', requireAdmin, async (req, res) => {
   const { role } = req.body || {};
   if (!['admin', 'staff', 'manager'].includes(role)) {
     return res.status(400).json({ error: 'Invalid role' });
   }
 
-  const result = db.prepare(`
-    UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?
-  `).run(role, req.params.id);
+  const rows = await sql`
+    UPDATE users SET role = ${role}, updated_at = NOW()
+    WHERE id = ${req.params.id}
+    RETURNING id
+  `;
 
-  if (result.changes === 0) {
+  if (!rows.length) {
     return res.status(404).json({ error: 'User not found' });
   }
   res.json({ success: true });
 });
 
-router.patch('/:id/department', requireAdmin, (req, res) => {
+router.patch('/:id/department', requireAdmin, async (req, res) => {
   const { department_id, department_ids } = req.body || {};
-  const user = getStaffUser(req.params.id);
+  const user = await getStaffUser(req.params.id);
 
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
@@ -178,12 +185,12 @@ router.patch('/:id/department', requireAdmin, (req, res) => {
           ? [department_id]
           : [];
 
-      setUserDepartments(user.id, ids);
-      syncLegacyDepartmentId(user.id);
+      await setUserDepartments(user.id, ids);
+      await syncLegacyDepartmentId(user.id);
     }
 
-    const updated = getStaffUser(user.id);
-    res.json(formatDepartmentsPayload(updated));
+    const updated = await getStaffUser(user.id);
+    res.json(await formatDepartmentsPayload(updated));
   } catch (err) {
     if (err.message === 'Department not found') {
       return res.status(404).json({ error: 'Department not found' });
@@ -192,13 +199,15 @@ router.patch('/:id/department', requireAdmin, (req, res) => {
   }
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) {
     return res.status(400).json({ error: 'You cannot delete your own account' });
   }
 
-  const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) {
+  const rows = await sql`
+    DELETE FROM users WHERE id = ${req.params.id} RETURNING id
+  `;
+  if (!rows.length) {
     return res.status(404).json({ error: 'User not found' });
   }
   res.json({ success: true });

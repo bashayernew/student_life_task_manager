@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
+import { sql, query } from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import {
   getUserById,
@@ -53,13 +53,14 @@ function buildTask(row) {
   };
 }
 
-function getTaskAssignees(taskId) {
-  return db.prepare(`
+async function getTaskAssignees(taskId) {
+  const rows = await sql`
     SELECT ta.*, u.id as user_id, u.full_name, u.email, u.role
     FROM task_assignees ta
     JOIN users u ON ta.user_id = u.id
-    WHERE ta.task_id = ?
-  `).all(taskId).map((a) => ({
+    WHERE ta.task_id = ${taskId}
+  `;
+  return rows.map((a) => ({
     user_id: a.user_id,
     status: a.status,
     updated_at: a.updated_at,
@@ -68,8 +69,8 @@ function getTaskAssignees(taskId) {
   }));
 }
 
-function computeAssigneeSummary(taskId) {
-  const assignees = getTaskAssignees(taskId);
+async function computeAssigneeSummary(taskId) {
+  const assignees = await getTaskAssignees(taskId);
   const total = assignees.length;
   const completed = assignees.filter((a) => a.status === 'completed').length;
   const pending = total - completed;
@@ -86,25 +87,26 @@ function computeAssigneeSummary(taskId) {
   return { total, completed, pending, overall_status };
 }
 
-function syncTaskOverallStatus(taskId) {
-  const summary = computeAssigneeSummary(taskId);
+async function syncTaskOverallStatus(taskId) {
+  const summary = await computeAssigneeSummary(taskId);
   const taskStatus = summary.overall_status === 'completed' ? 'completed' : 'pending';
 
-  db.prepare(`
-    UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?
-  `).run(taskStatus, taskId);
+  await sql`
+    UPDATE tasks SET status = ${taskStatus}, updated_at = NOW() WHERE id = ${taskId}
+  `;
 
   return summary;
 }
 
-function getCommentRecipients(commentId) {
-  return db.prepare(`
+async function getCommentRecipients(commentId) {
+  const rows = await sql`
     SELECT u.id, u.full_name, u.email, u.role
     FROM task_comment_recipients r
     JOIN users u ON u.id = r.user_id
-    WHERE r.comment_id = ?
+    WHERE r.comment_id = ${commentId}
     ORDER BY u.full_name ASC
-  `).all(commentId).map((row) => ({
+  `;
+  return rows.map((row) => ({
     id: row.id,
     full_name: row.full_name,
     email: row.email,
@@ -112,28 +114,28 @@ function getCommentRecipients(commentId) {
   }));
 }
 
-function setCommentRecipients(commentId, userIds = []) {
-  db.prepare('DELETE FROM task_comment_recipients WHERE comment_id = ?').run(commentId);
-
-  const insertRecipient = db.prepare(`
-    INSERT INTO task_comment_recipients (comment_id, user_id) VALUES (?, ?)
-  `);
+async function setCommentRecipients(commentId, userIds = []) {
+  await sql`DELETE FROM task_comment_recipients WHERE comment_id = ${commentId}`;
 
   for (const userId of userIds) {
     if (userId) {
-      insertRecipient.run(commentId, userId);
+      await sql`
+        INSERT INTO task_comment_recipients (comment_id, user_id) VALUES (${commentId}, ${userId})
+        ON CONFLICT DO NOTHING
+      `;
     }
   }
 }
 
-function getTaskAssigneeUserIds(taskId) {
-  return db.prepare(`
-    SELECT user_id FROM task_assignees WHERE task_id = ?
-  `).all(taskId).map((row) => row.user_id);
+async function getTaskAssigneeUserIds(taskId) {
+  const rows = await sql`
+    SELECT user_id FROM task_assignees WHERE task_id = ${taskId}
+  `;
+  return rows.map((row) => row.user_id);
 }
 
-function formatCommentRow(row, recipients = null) {
-  const resolvedRecipients = recipients ?? getCommentRecipients(row.id);
+async function formatCommentRow(row, recipients = null) {
+  const resolvedRecipients = recipients ?? (await getCommentRecipients(row.id));
 
   return {
     id: row.id,
@@ -171,17 +173,17 @@ function canViewComment(user, comment, commentsById) {
   return recipients.some((recipient) => recipient.id === user.id);
 }
 
-function getTaskComments(taskId, viewer = null) {
-  const rows = db.prepare(`
+async function getTaskComments(taskId, viewer = null) {
+  const rows = await sql`
     SELECT c.id, c.task_id, c.user_id, c.parent_id, c.body, c.created_at,
       u.full_name, u.email, u.role
     FROM task_comments c
     JOIN users u ON u.id = c.user_id
-    WHERE c.task_id = ?
+    WHERE c.task_id = ${taskId}
     ORDER BY c.created_at ASC
-  `).all(taskId);
+  `;
 
-  const comments = rows.map((row) => formatCommentRow(row));
+  const comments = await Promise.all(rows.map((row) => formatCommentRow(row)));
   const commentsById = new Map(comments.map((comment) => [comment.id, comment]));
 
   if (!viewer || viewer.role === 'admin' || viewer.role === 'manager') {
@@ -191,58 +193,63 @@ function getTaskComments(taskId, viewer = null) {
   return comments.filter((comment) => canViewComment(viewer, comment, commentsById));
 }
 
-function addTaskComment(taskId, userId, body, parentId = null, recipientIds = null) {
+async function addTaskComment(taskId, userId, body, parentId = null, recipientIds = null) {
   const commentId = uuidv4();
-  db.prepare(`
+  await sql`
     INSERT INTO task_comments (id, task_id, user_id, parent_id, body)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(commentId, taskId, userId, parentId, body.trim());
+    VALUES (${commentId}, ${taskId}, ${userId}, ${parentId}, ${body.trim()})
+  `;
 
   if (Array.isArray(recipientIds) && recipientIds.length > 0) {
-    setCommentRecipients(commentId, recipientIds);
+    await setCommentRecipients(commentId, recipientIds);
   }
 
-  const row = db.prepare(`
+  const rows = await sql`
     SELECT c.id, c.task_id, c.user_id, c.parent_id, c.body, c.created_at,
       u.full_name, u.email, u.role
     FROM task_comments c
     JOIN users u ON u.id = c.user_id
-    WHERE c.id = ?
-  `).get(commentId);
+    WHERE c.id = ${commentId}
+  `;
 
-  return formatCommentRow(row);
+  return formatCommentRow(rows[0]);
 }
 
-function canAccessTask(user, taskId) {
-  const task = db.prepare('SELECT id, department_id, created_by FROM tasks WHERE id = ?').get(taskId);
+async function canAccessTask(user, taskId) {
+  const taskRows = await sql`
+    SELECT id, department_id, created_by FROM tasks WHERE id = ${taskId}
+  `;
+  const task = taskRows[0];
   if (!task || !user) return false;
 
   if (user.role === 'admin') return true;
 
   if (user.role === 'manager') {
-    return managerCanAccessTask(user.id, taskId);
+    return await managerCanAccessTask(user.id, taskId);
   }
 
-  return Boolean(
-    db.prepare('SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ?').get(taskId, user.id)
-  );
+  const assignee = await sql`
+    SELECT 1 FROM task_assignees WHERE task_id = ${taskId} AND user_id = ${user.id}
+  `;
+  return assignee.length > 0;
 }
 
 function canReplyToComments(user, task) {
   return user.role === 'admin' || user.role === 'manager' || task.created_by === user.id;
 }
 
-function isTaskAssignee(userId, taskId) {
-  return Boolean(
-    db.prepare('SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ?').get(taskId, userId)
-  );
+async function isTaskAssignee(userId, taskId) {
+  const rows = await sql`
+    SELECT 1 FROM task_assignees WHERE task_id = ${taskId} AND user_id = ${userId}
+  `;
+  return rows.length > 0;
 }
 
-function canReplyToComment(user, task, parentComment) {
+async function canReplyToComment(user, task, parentComment) {
   if (!parentComment) return false;
   if (canReplyToComments(user, task)) return true;
 
-  if (!isTaskAssignee(user.id, task.id)) return false;
+  if (!(await isTaskAssignee(user.id, task.id))) return false;
 
   const authorRole = parentComment.author_role || parentComment.role;
   return authorRole === 'admin' || authorRole === 'manager';
@@ -260,29 +267,29 @@ function buildAssigneeNotesMap(assigneeDetails = [], assigneeNotes = {}) {
   return notesMap;
 }
 
-function enrichTask(taskId, row, viewer = null) {
-  const assignee_summary = computeAssigneeSummary(taskId);
+async function enrichTask(taskId, row, viewer = null) {
+  const assignee_summary = await computeAssigneeSummary(taskId);
 
   return {
     ...buildTask(row),
     status: assignee_summary.overall_status === 'completed' ? 'completed' : 'pending',
-    task_assignees: getTaskAssignees(taskId),
+    task_assignees: await getTaskAssignees(taskId),
     assignee_summary,
-    comments: getTaskComments(taskId, viewer),
+    comments: await getTaskComments(taskId, viewer),
   };
 }
 
-function getFullTask(taskId, viewer = null) {
-  const row = db.prepare(`
+async function getFullTask(taskId, viewer = null) {
+  const rows = await sql`
     SELECT t.*,
       cb.id as creator_id, cb.full_name as creator_full_name, cb.email as creator_email, cb.role as creator_role,
       d.id as dept_id, d.name as dept_name
     FROM tasks t
     LEFT JOIN users cb ON t.created_by = cb.id
     LEFT JOIN departments d ON t.department_id = d.id
-    WHERE t.id = ?
-  `).get(taskId);
-
+    WHERE t.id = ${taskId}
+  `;
+  const row = rows[0];
   if (!row) return null;
 
   return enrichTask(taskId, row, viewer);
@@ -310,14 +317,14 @@ function formatMyTaskRow(row) {
   };
 }
 
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   const userId = req.query.userId || req.user.id;
-  const rows = db.prepare(`
+  const rows = await sql`
     SELECT t.due_at, t.due_date, ta.status
     FROM task_assignees ta
     JOIN tasks t ON ta.task_id = t.id
-    WHERE ta.user_id = ?
-  `).all(userId);
+    WHERE ta.user_id = ${userId}
+  `;
 
   const stats = { total: rows.length, pending: 0, in_progress: 0, completed: 0, overdue: 0 };
   const now = new Date();
@@ -336,33 +343,32 @@ router.get('/stats', (req, res) => {
   res.json(stats);
 });
 
-router.get('/my', (req, res) => {
+router.get('/my', async (req, res) => {
   const userId = req.query.userId || req.user.id;
-  const rows = db.prepare(`
+  const rows = await sql`
     SELECT ta.task_id, ta.user_id, ta.status, ta.updated_at,
       t.title, t.description, t.due_at, t.due_date, t.priority, t.department_id,
       d.name as dept_name
     FROM task_assignees ta
     JOIN tasks t ON ta.task_id = t.id
     LEFT JOIN departments d ON t.department_id = d.id
-    WHERE ta.user_id = ?
+    WHERE ta.user_id = ${userId}
     ORDER BY ta.updated_at DESC
-  `).all(userId);
+  `;
 
   res.json(rows.map(formatMyTaskRow));
 });
 
-router.get('/', (req, res) => {
-  const user = getUserById(req.user.id);
+router.get('/', async (req, res) => {
+  const user = await getUserById(req.user.id);
   let rows;
 
   if (user?.role === 'manager') {
-    const managerDeptIds = getManagerDepartmentIds(user.id);
+    const managerDeptIds = await getManagerDepartmentIds(user.id);
     if (!managerDeptIds.length) {
       rows = [];
     } else {
-      const placeholders = managerDeptIds.map(() => '?').join(', ');
-      rows = db.prepare(`
+      rows = await sql`
         SELECT DISTINCT t.*,
           cb.id as creator_id, cb.full_name as creator_full_name, cb.email as creator_email, cb.role as creator_role,
           d.id as dept_id, d.name as dept_name
@@ -372,14 +378,14 @@ router.get('/', (req, res) => {
         LEFT JOIN task_assignees ta ON ta.task_id = t.id
         LEFT JOIN users assignee ON ta.user_id = assignee.id
         LEFT JOIN user_departments ud ON ud.user_id = assignee.id
-        WHERE t.department_id IN (${placeholders})
-          OR ud.department_id IN (${placeholders})
-          OR assignee.department_id IN (${placeholders})
+        WHERE t.department_id = ANY(${managerDeptIds})
+          OR ud.department_id = ANY(${managerDeptIds})
+          OR assignee.department_id = ANY(${managerDeptIds})
         ORDER BY t.created_at DESC
-      `).all(...managerDeptIds, ...managerDeptIds, ...managerDeptIds);
+      `;
     }
   } else {
-    rows = db.prepare(`
+    rows = await sql`
       SELECT t.*,
         cb.id as creator_id, cb.full_name as creator_full_name, cb.email as creator_email, cb.role as creator_role,
         d.id as dept_id, d.name as dept_name
@@ -387,44 +393,46 @@ router.get('/', (req, res) => {
       LEFT JOIN users cb ON t.created_by = cb.id
       LEFT JOIN departments d ON t.department_id = d.id
       ORDER BY t.created_at DESC
-    `).all();
+    `;
   }
 
-  res.json(rows.map((row) => enrichTask(row.id, row, user)));
+  const tasks = await Promise.all(rows.map((row) => enrichTask(row.id, row, user)));
+  res.json(tasks);
 });
 
-router.get('/:id', (req, res) => {
-  const user = getUserById(req.user.id);
-  const task = getFullTask(req.params.id, user);
+router.get('/:id', async (req, res) => {
+  const user = await getUserById(req.user.id);
+  const task = await getFullTask(req.params.id, user);
 
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  if (!canAccessTask(user, req.params.id)) {
+  if (!(await canAccessTask(user, req.params.id))) {
     return res.status(403).json({ error: 'You do not have access to this task' });
   }
 
   res.json(task);
 });
 
-router.get('/:id/comments', (req, res) => {
-  const user = getUserById(req.user.id);
+router.get('/:id/comments', async (req, res) => {
+  const user = await getUserById(req.user.id);
   const taskId = req.params.id;
 
-  if (!db.prepare('SELECT id FROM tasks WHERE id = ?').get(taskId)) {
+  const exists = await sql`SELECT id FROM tasks WHERE id = ${taskId}`;
+  if (!exists[0]) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  if (!canAccessTask(user, taskId)) {
+  if (!(await canAccessTask(user, taskId))) {
     return res.status(403).json({ error: 'You do not have access to this task' });
   }
 
-  res.json(getTaskComments(taskId, user));
+  res.json(await getTaskComments(taskId, user));
 });
 
-router.post('/:id/comments', (req, res) => {
-  const user = getUserById(req.user.id);
+router.post('/:id/comments', async (req, res) => {
+  const user = await getUserById(req.user.id);
   const taskId = req.params.id;
   const {
     body,
@@ -440,28 +448,32 @@ router.post('/:id/comments', (req, res) => {
     return res.status(400).json({ error: 'Comment text is required' });
   }
 
-  const task = db.prepare('SELECT id, department_id, created_by FROM tasks WHERE id = ?').get(taskId);
+  const taskRows = await sql`
+    SELECT id, department_id, created_by FROM tasks WHERE id = ${taskId}
+  `;
+  const task = taskRows[0];
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  if (!canAccessTask(user, taskId)) {
+  if (!(await canAccessTask(user, taskId))) {
     return res.status(403).json({ error: 'You do not have access to this task' });
   }
 
   if (replyToId) {
-    const parentComment = db.prepare(`
+    const parentRows = await sql`
       SELECT c.id, c.user_id, u.role as author_role
       FROM task_comments c
       JOIN users u ON u.id = c.user_id
-      WHERE c.id = ? AND c.task_id = ?
-    `).get(replyToId, taskId);
+      WHERE c.id = ${replyToId} AND c.task_id = ${taskId}
+    `;
+    const parentComment = parentRows[0];
 
     if (!parentComment) {
       return res.status(404).json({ error: 'Parent comment not found' });
     }
 
-    if (!canReplyToComment(user, task, parentComment)) {
+    if (!(await canReplyToComment(user, task, parentComment))) {
       return res.status(403).json({ error: 'You cannot reply to this comment' });
     }
   }
@@ -476,7 +488,7 @@ router.post('/:id/comments', (req, res) => {
       return res.status(400).json({ error: 'recipientIds must be an array' });
     }
 
-    const assigneeIds = getTaskAssigneeUserIds(taskId);
+    const assigneeIds = await getTaskAssigneeUserIds(taskId);
     recipientList = [...new Set(requestedRecipients.filter(Boolean))];
 
     if (recipientList.length > 0) {
@@ -487,12 +499,12 @@ router.post('/:id/comments', (req, res) => {
     }
   }
 
-  const row = addTaskComment(taskId, user.id, body, replyToId, recipientList);
+  const row = await addTaskComment(taskId, user.id, body, replyToId, recipientList);
 
   res.status(201).json(row);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const {
     title,
     description,
@@ -511,21 +523,22 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Title is required' });
   }
 
-  const user = getUserById(req.user.id);
-  if (!canCreateTasks(user)) {
+  const user = await getUserById(req.user.id);
+  if (!(await canCreateTasks(user))) {
+    const managerDeptIds = user?.role === 'manager' ? await getManagerDepartmentIds(user.id) : [];
     return res.status(403).json({
-      error: user?.role === 'manager' && !getManagerDepartmentIds(user.id).length
+      error: user?.role === 'manager' && !managerDeptIds.length
         ? 'Manager has no department assigned. Contact an admin.'
         : 'You do not have permission to create tasks',
     });
   }
 
-  const departmentResult = resolveTaskDepartmentId(user, department_id || null);
+  const departmentResult = await resolveTaskDepartmentId(user, department_id || null);
   if (departmentResult.error) {
     return res.status(403).json({ error: departmentResult.error });
   }
 
-  const assigneeCheck = validateAssignees(user, assigneeIds);
+  const assigneeCheck = await validateAssignees(user, assigneeIds);
   if (!assigneeCheck.ok) {
     return res.status(403).json({ error: assigneeCheck.error });
   }
@@ -542,40 +555,37 @@ router.post('/', (req, res) => {
   const creatorId = created_by || userId || req.user.id;
   const finalDepartmentId = departmentResult.departmentId ?? departmentResult ?? null;
 
-  db.prepare(`
+  await sql`
     INSERT INTO tasks (id, title, description, priority, department_id, created_by, due_at, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    taskId,
-    title.trim(),
-    description || details || '',
-    safePriority,
-    finalDepartmentId,
-    creatorId,
-    dueAtISO,
-    dueAtISO
-  );
+    VALUES (
+      ${taskId},
+      ${title.trim()},
+      ${description || details || ''},
+      ${safePriority},
+      ${finalDepartmentId},
+      ${creatorId},
+      ${dueAtISO},
+      ${dueAtISO}
+    )
+  `;
 
   const idsToAssign = assigneeCheck.assigneeIds || assigneeIds;
   const notesMap = buildAssigneeNotesMap(assigneeDetails, assigneeNotes);
 
-  if (idsToAssign.length) {
-    const insertAssignee = db.prepare(`
+  for (const uid of idsToAssign) {
+    await sql`
       INSERT INTO task_assignees (task_id, user_id, status, personal_description)
-      VALUES (?, ?, 'pending', ?)
-    `);
-    for (const uid of idsToAssign) {
-      insertAssignee.run(taskId, uid, notesMap[uid] || '');
-    }
+      VALUES (${taskId}, ${uid}, ${'pending'}, ${notesMap[uid] || ''})
+    `;
   }
 
-  syncTaskOverallStatus(taskId);
+  await syncTaskOverallStatus(taskId);
 
-  res.status(201).json(getFullTask(taskId, user));
+  res.status(201).json(await getFullTask(taskId, user));
 });
 
-router.put('/:id', (req, res) => {
-  const user = getUserById(req.user.id);
+router.put('/:id', async (req, res) => {
+  const user = await getUserById(req.user.id);
   const updates = { ...req.body };
   if (updates.priority) {
     updates.priority = String(updates.priority).toLowerCase() === 'normal'
@@ -589,9 +599,10 @@ router.put('/:id', (req, res) => {
 
   const fields = [];
   const values = [];
+  let idx = 1;
   for (const key of ['title', 'description', 'status', 'priority', 'department_id', 'due_at', 'due_date']) {
     if (updates[key] !== undefined) {
-      fields.push(`${key} = ?`);
+      fields.push(`${key} = $${idx++}`);
       values.push(updates[key]);
     }
   }
@@ -600,85 +611,89 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'No updates provided' });
   }
 
-  fields.push("updated_at = datetime('now')");
+  fields.push('updated_at = NOW()');
   values.push(req.params.id);
 
-  const result = db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-  if (result.changes === 0) {
+  const rows = await query(
+    `UPDATE tasks SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id`,
+    values
+  );
+
+  if (!rows.length) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  res.json(getFullTask(req.params.id, user));
+  res.json(await getFullTask(req.params.id, user));
 });
 
-router.delete('/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) {
+router.delete('/:id', async (req, res) => {
+  const rows = await sql`
+    DELETE FROM tasks WHERE id = ${req.params.id} RETURNING id
+  `;
+  if (!rows.length) {
     return res.status(404).json({ error: 'Task not found' });
   }
   res.json({ success: true });
 });
 
-router.post('/:id/assign', (req, res) => {
+router.post('/:id/assign', async (req, res) => {
   const { userIds = [] } = req.body || {};
   const taskId = req.params.id;
 
-  const user = getUserById(req.user.id);
-  if (!canCreateTasks(user)) {
+  const user = await getUserById(req.user.id);
+  if (!(await canCreateTasks(user))) {
     return res.status(403).json({ error: 'You do not have permission to assign tasks' });
   }
 
-  const task = db.prepare('SELECT id, department_id FROM tasks WHERE id = ?').get(taskId);
+  const taskRows = await sql`SELECT id, department_id FROM tasks WHERE id = ${taskId}`;
+  const task = taskRows[0];
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
   if (user.role === 'manager') {
-    const managerDeptIds = getManagerDepartmentIds(user.id);
+    const managerDeptIds = await getManagerDepartmentIds(user.id);
     if (task.department_id && !managerDeptIds.includes(task.department_id)) {
       return res.status(403).json({ error: 'Managers can only assign tasks within their departments' });
     }
 
-    const departmentResult = resolveTaskDepartmentId(user, task.department_id || null);
+    const departmentResult = await resolveTaskDepartmentId(user, task.department_id || null);
     if (departmentResult.error) {
       return res.status(403).json({ error: departmentResult.error });
     }
   }
 
-  const assigneeCheck = validateAssignees(user, userIds);
+  const assigneeCheck = await validateAssignees(user, userIds);
   if (!assigneeCheck.ok) {
     return res.status(403).json({ error: assigneeCheck.error });
   }
 
-  db.prepare('DELETE FROM task_assignees WHERE task_id = ?').run(taskId);
+  await sql`DELETE FROM task_assignees WHERE task_id = ${taskId}`;
 
   const idsToAssign = assigneeCheck.assigneeIds || userIds;
-  if (idsToAssign.length) {
-    const insertAssignee = db.prepare(`
-      INSERT INTO task_assignees (task_id, user_id, status) VALUES (?, ?, 'pending')
-    `);
-    for (const uid of idsToAssign) {
-      insertAssignee.run(taskId, uid);
-    }
+  for (const uid of idsToAssign) {
+    await sql`
+      INSERT INTO task_assignees (task_id, user_id, status) VALUES (${taskId}, ${uid}, ${'pending'})
+    `;
   }
 
-  res.json(getFullTask(taskId, user));
+  res.json(await getFullTask(taskId, user));
 });
 
-router.patch('/:taskId/status', (req, res) => {
+router.patch('/:taskId/status', async (req, res) => {
   const { userId, status, comment } = req.body || {};
   const targetUserId = userId || req.user.id;
   const normalized = normalizeStatus(status);
-  const user = getUserById(req.user.id);
+  const user = await getUserById(req.user.id);
   const taskId = req.params.taskId;
 
-  const assignment = db.prepare(`
+  const assignmentRows = await sql`
     SELECT ta.task_id, ta.user_id
     FROM task_assignees ta
-    WHERE ta.task_id = ? AND ta.user_id = ?
-  `).get(taskId, targetUserId);
+    WHERE ta.task_id = ${taskId} AND ta.user_id = ${targetUserId}
+  `;
 
-  if (!assignment) {
+  if (!assignmentRows[0]) {
     return res.status(404).json({ error: 'Task assignment not found' });
   }
 
@@ -690,31 +705,31 @@ router.patch('/:taskId/status', (req, res) => {
     return res.status(403).json({ error: 'You cannot update this assignee status' });
   }
 
-  db.prepare(`
+  await sql`
     UPDATE task_assignees
-    SET status = ?, updated_at = datetime('now')
-    WHERE task_id = ? AND user_id = ?
-  `).run(normalized, taskId, targetUserId);
+    SET status = ${normalized}, updated_at = NOW()
+    WHERE task_id = ${taskId} AND user_id = ${targetUserId}
+  `;
 
   if (comment?.trim()) {
-    addTaskComment(taskId, user.id, comment, null);
+    await addTaskComment(taskId, user.id, comment, null);
   }
 
-  syncTaskOverallStatus(taskId);
+  await syncTaskOverallStatus(taskId);
 
-  const row = db.prepare(`
+  const rowRows = await sql`
     SELECT user_id, task_id, status, updated_at FROM task_assignees
-    WHERE task_id = ? AND user_id = ?
-  `).get(taskId, targetUserId);
+    WHERE task_id = ${taskId} AND user_id = ${targetUserId}
+  `;
 
   res.json({
-    ...row,
-    assignee_summary: computeAssigneeSummary(taskId),
+    ...rowRows[0],
+    assignee_summary: await computeAssigneeSummary(taskId),
   });
 });
 
-router.post('/:id/follow-up', (req, res) => {
-  const user = getUserById(req.user.id);
+router.post('/:id/follow-up', async (req, res) => {
+  const user = await getUserById(req.user.id);
   const taskId = req.params.id;
   const { userId, personalDescription, personal_description, comment } = req.body || {};
   const targetUserId = userId;
@@ -728,23 +743,24 @@ router.post('/:id/follow-up', (req, res) => {
     return res.status(403).json({ error: 'Only admins and managers can assign follow-up work' });
   }
 
-  const task = db.prepare('SELECT id, department_id FROM tasks WHERE id = ?').get(taskId);
+  const taskRows = await sql`SELECT id, department_id FROM tasks WHERE id = ${taskId}`;
+  const task = taskRows[0];
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
 
   if (user.role === 'manager') {
-    const assigneeCheck = validateAssignees(user, [targetUserId]);
+    const assigneeCheck = await validateAssignees(user, [targetUserId]);
     if (!assigneeCheck.ok) {
       return res.status(403).json({ error: assigneeCheck.error });
     }
   }
 
-  const assignment = db.prepare(`
-    SELECT user_id FROM task_assignees WHERE task_id = ? AND user_id = ?
-  `).get(taskId, targetUserId);
+  const assignmentRows = await sql`
+    SELECT user_id FROM task_assignees WHERE task_id = ${taskId} AND user_id = ${targetUserId}
+  `;
 
-  if (!assignment) {
+  if (!assignmentRows[0]) {
     return res.status(404).json({ error: 'This team member is not assigned to the task' });
   }
 
@@ -752,27 +768,29 @@ router.post('/:id/follow-up', (req, res) => {
     return res.status(400).json({ error: 'Follow-up instructions or a comment is required' });
   }
 
-  const nextPersonalDescription = followUpText.trim()
-    ? followUpText.trim()
-    : db.prepare(`
-        SELECT personal_description FROM task_assignees WHERE task_id = ? AND user_id = ?
-      `).get(taskId, targetUserId)?.personal_description || '';
-
-  db.prepare(`
-    UPDATE task_assignees
-    SET status = 'pending',
-        personal_description = ?,
-        updated_at = datetime('now')
-    WHERE task_id = ? AND user_id = ?
-  `).run(nextPersonalDescription, taskId, targetUserId);
-
-  if (comment?.trim()) {
-    addTaskComment(taskId, user.id, comment, null);
+  let nextPersonalDescription = followUpText.trim();
+  if (!nextPersonalDescription) {
+    const descRows = await sql`
+      SELECT personal_description FROM task_assignees WHERE task_id = ${taskId} AND user_id = ${targetUserId}
+    `;
+    nextPersonalDescription = descRows[0]?.personal_description || '';
   }
 
-  syncTaskOverallStatus(taskId);
+  await sql`
+    UPDATE task_assignees
+    SET status = ${'pending'},
+        personal_description = ${nextPersonalDescription},
+        updated_at = NOW()
+    WHERE task_id = ${taskId} AND user_id = ${targetUserId}
+  `;
 
-  res.json(getFullTask(taskId, user));
+  if (comment?.trim()) {
+    await addTaskComment(taskId, user.id, comment, null);
+  }
+
+  await syncTaskOverallStatus(taskId);
+
+  res.json(await getFullTask(taskId, user));
 });
 
 export default router;
