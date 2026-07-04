@@ -45,8 +45,12 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased overflow-x-hidden;
     font-family: 'Inter', sans-serif;
+  }
+
+  #root {
+    @apply overflow-x-hidden max-w-[100vw];
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -108,8 +112,16 @@
     transform: translateY(-1px);
   }
 
-  .focus-ring {
-    @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background;
+  .ktech-page-shell {
+    @apply min-h-screen bg-background text-foreground overflow-x-hidden w-full max-w-[100vw];
+  }
+
+  .ktech-responsive-table-wrap {
+    @apply hidden sm:block overflow-x-auto;
+  }
+
+  .ktech-mobile-card-list {
+    @apply space-y-3 p-4 sm:hidden;
   }
 }
 

@@ -88,7 +88,7 @@ const Departments = () => {
 
   return (
     <ProtectedRoute requireAdmin={true}>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="ktech-page-shell">
         <AppPageHeader title="Departments" />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -138,7 +138,66 @@ const Departments = () => {
             ) : departments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No departments yet. Add one above.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="ktech-mobile-card-list">
+                  {departments.map((dept) => (
+                    <div key={dept.id} className="rounded-lg border border-border bg-card p-4">
+                      {editingDeptId === dept.id ? (
+                        <div className="space-y-3">
+                          <Input
+                            type="text"
+                            value={editingDeptName}
+                            onChange={(e) => setEditingDeptName(e.target.value)}
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" onClick={() => handleSaveDepartment(dept.id)} disabled={submitting}>
+                              Save
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingDeptId(null);
+                                setEditingDeptName('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-foreground break-words">{dept.name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {dept.staff_count ?? 0} staff · {dept.task_count ?? 0} tasks
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDeptId(dept.id);
+                                setEditingDeptName(dept.name);
+                              }}
+                              className="text-secondary hover:text-primary underline text-xs"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDepartment(dept)}
+                              disabled={submitting}
+                              className="text-error hover:text-red-700 underline text-xs"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="ktech-responsive-table-wrap">
                 <table className="w-full">
                   <thead className="bg-muted">
                     <tr>
@@ -217,7 +276,8 @@ const Departments = () => {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
           </div>
         </main>

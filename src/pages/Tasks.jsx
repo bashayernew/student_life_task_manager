@@ -5,9 +5,9 @@ import { taskService } from '../utils/taskService';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Button from '../components/ui/Button';
 import Select from '../components/ui/Select';
-import { getStatusBadgeClass, getPriorityBadgeClass, isOverdue, formatDate, getTaskDisplayStatusForUser, getTaskAssigneeSummary } from '../utils/statusUtils';
-import Icon from '../components/AppIcon';
+import { getTaskDisplayStatusForUser, getTaskAssigneeSummary } from '../utils/statusUtils';
 import AppPageHeader from '../components/AppPageHeader';
+import { TaskListDesktopTable, TaskListMobileCard } from '../components/TaskListViews';
 
 const Tasks = () => {
   const { userProfile } = useAuth();
@@ -89,7 +89,7 @@ const Tasks = () => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="ktech-page-shell">
         <AppPageHeader title="Tasks" />
 
         {/* Main Content */}
@@ -138,99 +138,27 @@ const Tasks = () => {
             </div>
           ) : (
             <div className="ktech-card overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Title
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Department
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Priority
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Due Date
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {filteredTasks.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="px-6 py-8 text-center text-muted-foreground">
-                          No tasks found
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTasks.map((task) => {
-                        const displayStatus = getTaskDisplayStatusForUser(task, userProfile);
-                        const overdue = isOverdue(task.due_at);
-                        return (
-                          <tr
-                            key={task.id}
-                            onClick={() => handleRowClick(task.id)}
-                            className="hover:bg-muted cursor-pointer transition-colors"
-                          >
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-foreground">
-                                {task.title}
-                              </div>
-                              {task.description && (
-                                <div className="text-sm text-muted-foreground truncate max-w-xs">
-                                  {task.description}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                              {task.department?.name || 'No department'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="space-y-1">
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded border ${getStatusBadgeClass(
-                                    displayStatus.badgeStatus
-                                  )}`}
-                                >
-                                  {displayStatus.label}
-                                </span>
-                                {isLead && displayStatus.summary?.total > 1 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {displayStatus.summary.completed}/{displayStatus.summary.total} members completed
-                                  </p>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded border ${getPriorityBadgeClass(
-                                  task.priority
-                                )}`}
-                              >
-                                {task.priority === 'normal' ? 'medium' : (task.priority || 'medium')}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className={`text-sm ${overdue ? 'text-error font-medium' : 'text-muted-foreground'}`}>
-                                {formatDate(task.due_at)}
-                                {overdue && (
-                                  <span className="ml-2 text-error">
-                                    <Icon name="AlertCircle" size={14} />
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+              <div className="ktech-mobile-card-list">
+                {filteredTasks.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No tasks found</p>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TaskListMobileCard
+                      key={task.id}
+                      task={task}
+                      userProfile={userProfile}
+                      isLead={isLead}
+                      onClick={() => handleRowClick(task.id)}
+                    />
+                  ))
+                )}
               </div>
+              <TaskListDesktopTable
+                tasks={filteredTasks}
+                userProfile={userProfile}
+                isLead={isLead}
+                onRowClick={handleRowClick}
+              />
             </div>
           )}
         </main>

@@ -431,7 +431,7 @@ const Dashboard = () => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="ktech-page-shell">
         <AppPageHeader
           title="Task Manager"
           subtitle={`Welcome, ${userProfile?.full_name || userProfile?.email}`}
@@ -1037,7 +1037,61 @@ const Dashboard = () => {
                   <p className="text-sm mt-2">Create tasks and assign them to team members to see them here.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto ktech-card -mx-3 sm:mx-0">
+                <div className="ktech-card overflow-hidden">
+                  <div className="ktech-mobile-card-list">
+                    {teamTasks.map((task) => {
+                      const assignees = task.task_assignees || [];
+                      const staffAssignees = assignees.filter((a) => {
+                        const assigneeId = a.user_id || a.user?.id;
+                        return staffMembers.some((sm) => sm.id === assigneeId);
+                      });
+                      const displayStatus = getTaskDisplayStatusForUser(task, userProfile);
+                      const dueDate = task.due_at || task.due_date;
+                      const assigneeStatus = displayStatus.badgeStatus;
+                      const isTaskOverdue = dueDate && new Date(dueDate) < new Date() && assigneeStatus !== 'completed';
+                      const assigneeNames = staffAssignees
+                        .map((a) => {
+                          const assigneeId = a.user_id || a.user?.id;
+                          const member = staffMembers.find((sm) => sm.id === assigneeId);
+                          return member?.full_name || member?.email || a.user?.full_name || a.user?.email || 'Unknown';
+                        })
+                        .join(', ');
+
+                      return (
+                        <button
+                          key={task.id}
+                          type="button"
+                          onClick={() => navigate(`/task/${task.id}`)}
+                          className="w-full rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/50"
+                        >
+                          <p className="text-sm font-semibold text-foreground break-words">{task.title}</p>
+                          <p className="mt-2 text-xs text-muted-foreground break-words">
+                            {assigneeNames || 'No assignees'}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full border ${getStatusBadgeClass(displayStatus.badgeStatus)}`}
+                            >
+                              {displayStatus.label}
+                            </span>
+                            {displayStatus.summary?.total > 1 ? (
+                              <span className="text-xs text-muted-foreground">
+                                {displayStatus.summary.completed}/{displayStatus.summary.total} done
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className={`mt-2 text-xs ${isTaskOverdue ? 'text-error font-medium' : 'text-muted-foreground'}`}>
+                            Due {dueDate ? new Date(dueDate).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            }) : 'No due date'}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="ktech-responsive-table-wrap">
                   <table className="min-w-full divide-y divide-border">
                     <thead className="bg-muted hidden sm:table-header-group">
                       <tr>
@@ -1121,6 +1175,7 @@ const Dashboard = () => {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>

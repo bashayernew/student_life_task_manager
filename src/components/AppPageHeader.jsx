@@ -147,7 +147,7 @@ const AppPageHeader = ({
       : null;
 
   return (
-    <header className="ktech-page-header sticky top-0 z-40">
+    <header className="ktech-page-header sticky top-0 z-40 w-full max-w-[100vw] overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3 h-16">
           <div className="flex min-w-0 flex-1 items-center gap-2">

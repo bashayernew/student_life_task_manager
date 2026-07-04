@@ -290,7 +290,7 @@ const TaskDetail = () => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="ktech-page-shell">
         <AppPageHeader title="Task Details" backTo="/tasks" backLabel="Back to Tasks" />
 
         <main className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8 space-y-6">

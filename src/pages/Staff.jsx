@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Fragment } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { staffService } from '../utils/staffService';
@@ -8,6 +8,7 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
+import Icon from '../components/AppIcon';
 import AppPageHeader from '../components/AppPageHeader';
 
 const Staff = () => {
@@ -284,7 +285,7 @@ const Staff = () => {
 
   return (
     <ProtectedRoute requireAdmin={true}>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="ktech-page-shell">
         <AppPageHeader title="Staff Management" />
 
         {/* Main Content */}
@@ -461,10 +462,121 @@ const Staff = () => {
               <div className="flex justify-center items-center h-64">
                 <div className="ktech-spinner"></div>
               </div>
+            ) : staff.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
+                No staff members found
+              </p>
             ) : (
-              <div className="overflow-x-auto overflow-y-visible -mx-3 sm:mx-0">
+              <>
+                <div className="ktech-mobile-card-list">
+                  {staff.map((member) => (
+                    <div
+                      key={`${member.id}-mobile`}
+                      className="rounded-lg border border-border bg-card p-4"
+                    >
+                      <div className="space-y-2">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground break-words">{member.full_name}</div>
+                          <div className="text-xs text-muted-foreground font-mono break-all">{member.email}</div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded ${
+                              member.role === 'admin'
+                                ? 'bg-secondary/15 text-secondary'
+                                : 'bg-accent/15 text-secondary'
+                            }`}
+                          >
+                            {member.role}
+                          </span>
+                          {getMemberDepartmentLabel(member) && (
+                            <span className="text-xs text-muted-foreground">{getMemberDepartmentLabel(member)}</span>
+                          )}
+                        </div>
+                        <div className="pt-2">
+                          {member.role === 'admin' ? (
+                            <p className="text-xs text-muted-foreground">No department</p>
+                          ) : (
+                            <Select
+                              key={`${member.id}-mobile-dept`}
+                              label={member.role === 'staff' || member.role === 'manager' ? 'Departments' : 'Department'}
+                              value={getDepartmentSelectValue(member)}
+                              onChange={(value) => handleDepartmentSelectChange(member, value)}
+                              onOpenChange={(open) => handleDepartmentSelectClose(member, open)}
+                              options={getDepartmentOptionsForMember(member)}
+                              multiple={member.role === 'staff' || member.role === 'manager'}
+                              disabled={assigningUserId === member.id}
+                              searchable
+                              clearable={member.role !== 'staff' && member.role !== 'manager'}
+                              className="w-full"
+                            />
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(member.email);
+                              alert(`Email copied: ${member.email}`);
+                            }}
+                            className="text-secondary hover:text-primary underline text-xs"
+                          >
+                            Copy Email
+                          </button>
+                          {member.role !== 'admin' && (
+                            <>
+                              {confirmDelete === member.id ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteStaff(member)}
+                                    disabled={deletingUserId === member.id}
+                                    className="text-error hover:text-red-300 underline text-xs font-medium flex items-center gap-1"
+                                  >
+                                    {deletingUserId === member.id ? (
+                                      <>
+                                        <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
+                                        Deleting...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Icon name="Trash2" size={12} />
+                                        Confirm
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDelete(null)}
+                                    className="text-muted-foreground hover:text-muted-foreground underline text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStaff(member)}
+                                  disabled={deletingUserId === member.id}
+                                  className="text-error hover:text-red-300 underline text-xs flex items-center gap-1"
+                                >
+                                  <Icon name="Trash2" size={12} />
+                                  Delete
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {member.role === 'admin' && (
+                            <span className="text-xs text-muted-foreground">Cannot delete admin</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="ktech-responsive-table-wrap">
                 <table className="w-full">
-                         <thead className="bg-muted hidden sm:table-header-group">
+                         <thead className="bg-muted">
                            <tr>
                              <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                Email
@@ -484,115 +596,8 @@ const Staff = () => {
                            </tr>
                          </thead>
                   <tbody className="divide-y divide-border">
-                           {staff.length === 0 ? (
-                             <tr>
-                               <td colSpan="5" className="px-6 py-8 text-center text-muted-foreground">
-                                 No staff members found
-                               </td>
-                             </tr>
-                    ) : (
-                             staff.map((member) => (
-                               <Fragment key={member.id}>
-                                 {/* Mobile Card View */}
-                                 <tr className="sm:hidden hover:bg-muted">
-                                   <td className="px-4 py-4">
-                                     <div className="space-y-2">
-                                       <div>
-                                         <div className="text-sm font-semibold text-foreground break-words">{member.full_name}</div>
-                                         <div className="text-xs text-muted-foreground font-mono break-all">{member.email}</div>
-                                       </div>
-                                       <div className="flex flex-wrap items-center gap-2">
-                                         <span
-                                           className={`px-2 py-1 text-xs font-medium rounded ${
-                                             member.role === 'admin'
-                                               ? 'bg-secondary/15 text-secondary'
-                                               : 'bg-accent/15 text-secondary'
-                                           }`}
-                                         >
-                                           {member.role}
-                                         </span>
-                                         {getMemberDepartmentLabel(member) && (
-                                           <span className="text-xs text-muted-foreground">{getMemberDepartmentLabel(member)}</span>
-                                         )}
-                                       </div>
-                                       <div className="pt-2">
-                                         {member.role === 'admin' ? (
-                                           <p className="text-xs text-muted-foreground">No department</p>
-                                         ) : (
-                                           <Select
-                                             key={`${member.id}-mobile-dept`}
-                                             label={member.role === 'staff' || member.role === 'manager' ? 'Departments' : 'Department'}
-                                             value={getDepartmentSelectValue(member)}
-                                             onChange={(value) => handleDepartmentSelectChange(member, value)}
-                                             onOpenChange={(open) => handleDepartmentSelectClose(member, open)}
-                                             options={getDepartmentOptionsForMember(member)}
-                                             multiple={member.role === 'staff' || member.role === 'manager'}
-                                             disabled={assigningUserId === member.id}
-                                             searchable
-                                             clearable={member.role !== 'staff' && member.role !== 'manager'}
-                                             className="w-full"
-                                           />
-                                         )}
-                                       </div>
-                                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
-                                         <button
-                                           onClick={() => {
-                                             navigator.clipboard.writeText(member.email);
-                                             alert(`Email copied: ${member.email}`);
-                                           }}
-                                           className="text-secondary hover:text-primary underline text-xs"
-                                         >
-                                           Copy Email
-                                         </button>
-                                         {member.role !== 'admin' && (
-                                           <>
-                                             {confirmDelete === member.id ? (
-                                               <div className="flex items-center gap-2">
-                                                 <button
-                                                   onClick={() => handleDeleteStaff(member)}
-                                                   disabled={deletingUserId === member.id}
-                                                   className="text-error hover:text-red-300 underline text-xs font-medium flex items-center gap-1"
-                                                 >
-                                                   {deletingUserId === member.id ? (
-                                                     <>
-                                                       <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
-                                                       Deleting...
-                                                     </>
-                                                   ) : (
-                                                     <>
-                                                       <Icon name="Trash2" size={12} />
-                                                       Confirm
-                                                     </>
-                                                   )}
-                                                 </button>
-                                                 <button
-                                                   onClick={() => setConfirmDelete(null)}
-                                                   className="text-muted-foreground hover:text-muted-foreground underline text-xs"
-                                                 >
-                                                   Cancel
-                                                 </button>
-                                               </div>
-                                             ) : (
-                                               <button
-                                                 onClick={() => handleDeleteStaff(member)}
-                                                 disabled={deletingUserId === member.id}
-                                                 className="text-error hover:text-red-300 underline text-xs flex items-center gap-1"
-                                               >
-                                                 <Icon name="Trash2" size={12} />
-                                                 Delete
-                                               </button>
-                                             )}
-                                           </>
-                                         )}
-                                         {member.role === 'admin' && (
-                                           <span className="text-xs text-muted-foreground">Cannot delete admin</span>
-                                         )}
-                                       </div>
-                                     </div>
-                                   </td>
-                                 </tr>
-                                 {/* Desktop Table View */}
-                                 <tr className="hidden sm:table-row hover:bg-muted">
+                    {staff.map((member) => (
+                      <tr key={member.id} className="hover:bg-muted">
                                    <td className="px-4 sm:px-6 py-4 text-sm text-foreground font-mono break-all">
                                      {member.email}
                                    </td>
@@ -685,12 +690,11 @@ const Staff = () => {
                                      </div>
                                    </td>
                                  </tr>
-                               </Fragment>
-                             ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
           </div>
         </main>
