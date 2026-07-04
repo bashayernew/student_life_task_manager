@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import serverless from 'serverless-http';
 import app from 'student-life-task-manager-api';
 
-export default app;
+export default serverless(app);

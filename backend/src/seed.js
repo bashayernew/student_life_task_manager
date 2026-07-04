@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db from './db.js';
+import { sql, ensureDbReady } from './db.js';
 
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+await ensureDbReady();
 
-if (userCount > 0) {
+const countRows = await sql`SELECT COUNT(*)::int AS count FROM users`;
+if (countRows[0].count > 0) {
   console.log('Database already seeded, skipping.');
   process.exit(0);
 }
@@ -16,7 +17,7 @@ const staffPassword = process.env.SEED_STAFF_PASSWORD;
 
 if (!adminPassword || !managerPassword || !staffPassword) {
   console.error(
-    'Missing seed passwords. Set SEED_ADMIN_PASSWORD, SEED_MANAGER_PASSWORD (or reuse SEED_STAFF_PASSWORD), and SEED_STAFF_PASSWORD in backend/.env before running seed.'
+    'Missing seed passwords. Set SEED_ADMIN_PASSWORD, SEED_MANAGER_PASSWORD, and SEED_STAFF_PASSWORD in .env before running seed.'
   );
   process.exit(1);
 }
@@ -38,18 +39,12 @@ const departments = [
   'Student Engagement',
 ];
 
-const insertDept = db.prepare('INSERT INTO departments (id, name) VALUES (?, ?)');
 const deptIds = {};
 for (const name of departments) {
   const id = uuidv4();
-  insertDept.run(id, name);
+  await sql`INSERT INTO departments (id, name) VALUES (${id}, ${name})`;
   deptIds[name] = id;
 }
-
-const insertUser = db.prepare(`
-  INSERT INTO users (id, email, password_hash, full_name, role, department_id)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
 
 const users = [
   { email: adminEmail, password: adminPassword, full_name: 'Super Admin', role: 'admin', department_id: null },
@@ -59,7 +54,21 @@ const users = [
 ];
 
 for (const u of users) {
-  insertUser.run(uuidv4(), u.email, bcrypt.hashSync(u.password, 10), u.full_name, u.role, u.department_id);
+  const id = uuidv4();
+  const hash = bcrypt.hashSync(u.password, 10);
+  await sql`
+    INSERT INTO users (id, email, password_hash, full_name, role, department_id)
+    VALUES (${id}, ${u.email}, ${hash}, ${u.full_name}, ${u.role}, ${u.department_id})
+  `;
+  if (u.role === 'staff' || u.role === 'manager') {
+    if (u.department_id) {
+      await sql`
+        INSERT INTO user_departments (user_id, department_id)
+        VALUES (${id}, ${u.department_id})
+        ON CONFLICT DO NOTHING
+      `;
+    }
+  }
 }
 
 console.log('Database seeded successfully.');
