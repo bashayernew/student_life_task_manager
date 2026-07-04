@@ -70,6 +70,8 @@ git push origin main
 
 Ensure `DATABASE_URL`, `JWT_SECRET`, and super-admin vars are set in Vercel → Project → Settings → Environment Variables.
 
+If `/api/*` returns `FUNCTION_INVOCATION_FAILED` or a 503 with `"Server misconfigured"`, the deployment is missing one of those variables — `.env` is never uploaded to Vercel.
+
 ## API routes
 
 All routes are under `/api`:
@@ -81,7 +83,7 @@ All routes are under `/api`:
 ## Project structure
 
 ```
-├── api/index.js          # Vercel serverless entry (serverless-http → Express)
+├── api/index.js          # Vercel serverless entry (exports Express app)
 ├── backend/src/          # Express app, routes, Neon db layer
 ├── src/                  # React frontend
 ├── vercel.json           # Build output, SPA + API rewrites

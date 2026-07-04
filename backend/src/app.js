@@ -11,6 +11,23 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
+app.use((req, res, next) => {
+  if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+    return res.status(503).json({
+      error: 'Server misconfigured',
+      detail:
+        'DATABASE_URL is not set. Add it in Vercel → Settings → Environment Variables or in root .env for local dev.',
+    });
+  }
+  if (!process.env.JWT_SECRET) {
+    return res.status(503).json({
+      error: 'Server misconfigured',
+      detail: 'JWT_SECRET is not set.',
+    });
+  }
+  next();
+});
+
 app.use(async (req, res, next) => {
   try {
     await ensureDbReady();

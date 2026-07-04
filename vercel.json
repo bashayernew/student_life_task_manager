@@ -4,6 +4,11 @@
   "outputDirectory": "build",
   "devCommand": "npm run dev:web",
   "installCommand": "npm install",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "backend/src/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
