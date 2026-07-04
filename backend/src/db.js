@@ -1,46 +1,101 @@
 import { neon } from '@neondatabase/serverless';
 import { ensureSuperAdmin } from './bootstrapSuperAdmin.js';
 
-function getConnectionString() {
-  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-  if (!raw) {
-    throw new Error('DATABASE_URL (or POSTGRES_URL) is required');
-  }
-  if (raw.includes('sslmode=')) return raw;
-  const sep = raw.includes('?') ? '&' : '?';
-  return `${raw}${sep}sslmode=require`;
+const UNPOOLED_ENV_KEYS = [
+  'DATABASE_URL_UNPOOLED',
+  'POSTGRES_URL_NON_POOLING',
+  'POSTGRES_URL_UNPOOLED',
+];
+
+const INIT_TIMEOUT_MS = 25_000;
+
+function normalizeConnectionString(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.includes('sslmode=')) return trimmed;
+  const sep = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${sep}sslmode=require`;
 }
 
-/** @type {import('@neondatabase/serverless').NeonQueryFunction | null} */
+function hostFromConnectionString(connectionString) {
+  try {
+    const normalized = connectionString.replace(/^postgres(ql)?:/, 'postgresql:');
+    return new URL(normalized).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function isPooledConnectionString(connectionString) {
+  const host = hostFromConnectionString(connectionString);
+  return host.includes('-pooler') || host.includes('pooler.');
+}
+
+/**
+ * Prefer Neon pooled URL for serverless HTTP queries.
+ * Vercel + Neon integration: POSTGRES_URL is usually the pooled `-pooler` host.
+ */
+export function getDatabaseUrl() {
+  const candidates = [
+    { name: 'POSTGRES_URL', value: process.env.POSTGRES_URL },
+    { name: 'DATABASE_URL', value: process.env.DATABASE_URL },
+    { name: 'POSTGRES_PRISMA_URL', value: process.env.POSTGRES_PRISMA_URL },
+  ].filter((entry) => typeof entry.value === 'string' && entry.value.trim());
+
+  if (!candidates.length) {
+    const unpooledSet = UNPOOLED_ENV_KEYS.filter((key) => process.env[key]);
+    if (unpooledSet.length) {
+      throw new Error(
+        `Do not use ${unpooledSet.join(', ')} in serverless. ` +
+          'Set POSTGRES_URL (pooled, host contains -pooler) or DATABASE_URL instead.'
+      );
+    }
+    throw new Error('POSTGRES_URL or DATABASE_URL is required (use Neon pooled connection string).');
+  }
+
+  const pooled = candidates.find((entry) => isPooledConnectionString(entry.value));
+  if (pooled) {
+    return normalizeConnectionString(pooled.value);
+  }
+
+  const chosen = candidates[0];
+  if (process.env.VERCEL) {
+    console.warn(
+      `[db] ${chosen.name} does not look pooled (expected -pooler in host). ` +
+        'Set POSTGRES_URL from Neon integration for serverless.'
+    );
+  }
+
+  return normalizeConnectionString(chosen.value);
+}
+
+/** HTTP-based Neon query function (no TCP pool / WebSocket session). */
 let _sql = null;
 
 function getSql() {
   if (!_sql) {
-    _sql = neon(getConnectionString());
+    _sql = neon(getDatabaseUrl());
   }
   return _sql;
 }
 
-/** Tagged-template or parameterized query (lazy-connects after env is loaded). */
+/** Tagged-template query helper. */
 export function sql(strings, ...values) {
   return getSql()(strings, ...values);
 }
 
-/** Dynamic SQL with $1, $2 placeholders (for UPDATE builders). */
+/** Dynamic SQL with $1, $2 placeholders. */
 export async function query(text, params = []) {
-  return sql(text, params);
+  return getSql()(text, params);
 }
 
 export async function queryOne(text, params = []) {
-  const rows = await sql(text, params);
+  const rows = await query(text, params);
   return rows[0] ?? null;
 }
 
 export async function queryAll(text, params = []) {
-  return sql(text, params);
+  return query(text, params);
 }
-
-let initPromise = null;
 
 async function runMigrations() {
   await sql`
@@ -154,15 +209,39 @@ async function runMigrations() {
   }
 }
 
-/** Idempotent schema + super-admin; once per warm serverless instance. */
+async function runInit() {
+  await runMigrations();
+  await ensureSuperAdmin();
+}
+
+function withTimeout(promise, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${INIT_TIMEOUT_MS}ms`)), INIT_TIMEOUT_MS);
+    }),
+  ]);
+}
+
+let initPromise = null;
+
 export function ensureDbReady() {
   if (!initPromise) {
-    initPromise = (async () => {
-      await runMigrations();
-      await ensureSuperAdmin();
-    })();
+    initPromise = withTimeout(runInit(), 'Database initialization')
+      .then((result) => {
+        console.log('[db] ready');
+        return result;
+      })
+      .catch((err) => {
+        initPromise = null;
+        console.error('[db] initialization failed:', err);
+        throw err;
+      });
   }
   return initPromise;
 }
+
+/** Module-scope init for serverless cold starts (cached promise). */
+export const dbReady = ensureDbReady();
 
 export default sql;

@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { sql } from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { formatDepartmentsPayload } from '../utils/userDepartments.js';
+import { asyncRoute } from '../asyncRoute.js';
 
 const router = Router();
 
@@ -17,7 +18,7 @@ async function formatProfile(row) {
   };
 }
 
-router.post('/login', async (req, res) => {
+router.post('/login', asyncRoute(async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
@@ -44,18 +45,18 @@ router.post('/login', async (req, res) => {
     user: { id: user.id, email: user.email },
     profile,
   });
-});
+}));
 
-router.get('/me', authMiddleware, async (req, res) => {
+router.get('/me', authMiddleware, asyncRoute(async (req, res) => {
   const rows = await sql`SELECT * FROM users WHERE id = ${req.user.id}`;
   const user = rows[0];
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
   }
   res.json({ user: { id: user.id, email: user.email }, profile: await formatProfile(user) });
-});
+}));
 
-router.put('/profile', authMiddleware, async (req, res) => {
+router.put('/profile', authMiddleware, asyncRoute(async (req, res) => {
   const { full_name, department_id } = req.body || {};
   const currentRows = await sql`SELECT role FROM users WHERE id = ${req.user.id}`;
   const currentUser = currentRows[0];
@@ -79,9 +80,9 @@ router.put('/profile', authMiddleware, async (req, res) => {
 
   const rows = await sql`SELECT * FROM users WHERE id = ${req.user.id}`;
   res.json({ profile: await formatProfile(rows[0]) });
-});
+}));
 
-router.patch('/password', authMiddleware, async (req, res) => {
+router.patch('/password', authMiddleware, asyncRoute(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
 
   if (!currentPassword || !newPassword) {
@@ -114,6 +115,6 @@ router.patch('/password', authMiddleware, async (req, res) => {
   `;
 
   res.json({ success: true, message: 'Password updated successfully' });
-});
+}));
 
 export default router;

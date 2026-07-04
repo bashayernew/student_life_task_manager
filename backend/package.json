@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./src/app.js",
   "exports": {
-    ".": "./src/app.js"
+    ".": "./src/app.js",
+    "./db": "./src/db.js"
   },
   "scripts": {
     "start": "node src/index.js",
