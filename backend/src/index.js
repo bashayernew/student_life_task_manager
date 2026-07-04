@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import './db.js';
+import { ensureSuperAdmin } from './bootstrapSuperAdmin.js';
 import authRoutes from './routes/auth.js';
 import taskRoutes from './routes/tasks.js';
 import staffRoutes from './routes/staff.js';
@@ -9,6 +10,8 @@ import departmentRoutes from './routes/departments.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+ensureSuperAdmin();
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -28,5 +31,5 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`API running at http://localhost:${PORT}`);
+  console.log(`API listening on port ${PORT}`);
 });
