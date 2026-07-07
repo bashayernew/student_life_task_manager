@@ -315,7 +315,7 @@ const Select = React.forwardRef(({
 
                 <select
                     name={name}
-                    value={multiple ? undefined : (value || '')}
+                    value={multiple ? (Array.isArray(value) ? value : []) : (value || '')}
                     onChange={() => {}}
                     className="sr-only"
                     tabIndex={-1}
